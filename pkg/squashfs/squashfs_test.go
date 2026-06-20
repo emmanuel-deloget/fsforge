@@ -128,6 +128,46 @@ func TestUnsquashfs(t *testing.T) {
 	}
 }
 
+func TestOpenRoundTrip(t *testing.T) {
+	dev := device.NewMem(16 << 20)
+	buildSample(t, dev)
+
+	opened, err := New(testDeps()).Open(dev)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	type rootNoder interface{ RootNode() *image.Node }
+	root := opened.(rootNoder).RootNode()
+
+	find := func(n *image.Node, name string) *image.Node {
+		for _, e := range n.Children {
+			if e.Name == name {
+				return e.Node
+			}
+		}
+		return nil
+	}
+	readAll := func(s tree.Source) []byte {
+		b := make([]byte, s.Size())
+		s.ReadAt(b, 0)
+		return b
+	}
+
+	etc := find(root, "etc")
+	if etc == nil || string(readAll(find(etc, "hosts").Content)) != "127.0.0.1 localhost\n" {
+		t.Errorf("etc/hosts mismatch")
+	}
+	if got := readAll(find(root, "data.bin").Content); !bytes.Equal(got, sampleData(20000)) {
+		t.Errorf("data.bin mismatch: %d vs %d bytes", len(got), len(sampleData(20000)))
+	}
+	if ln := find(root, "link"); ln == nil || ln.Link != "etc/hosts" {
+		t.Errorf("symlink lost")
+	}
+	if d := find(find(find(root, "a"), "b"), "deep.txt"); d == nil || string(readAll(d.Content)) != "deep\n" {
+		t.Errorf("nested file lost")
+	}
+}
+
 func checkFile(t *testing.T, path, want string) {
 	t.Helper()
 	got, err := os.ReadFile(path)

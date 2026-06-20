@@ -14,6 +14,7 @@ import (
 	"github.com/emmanuel-deloget/fsforge/pkg/ext"
 	"github.com/emmanuel-deloget/fsforge/pkg/image"
 	"github.com/emmanuel-deloget/fsforge/pkg/oci"
+	"github.com/emmanuel-deloget/fsforge/pkg/squashfs"
 	"github.com/emmanuel-deloget/fsforge/pkg/tree"
 )
 
@@ -100,6 +101,23 @@ func loadTree(kind, path string, deps image.Deps) (*image.Node, *oci.Image, func
 		}
 		eng := ext.NewExt2(deps) // Open recovers the variant from the superblock
 		img, err := eng.Open(device.NewFile(f, info.Size()))
+		if err != nil {
+			f.Close()
+			return nil, nil, noop, err
+		}
+		return img.(rootNoder).RootNode(), nil, func() { f.Close() }, nil
+
+	case "squashfs":
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, nil, noop, err
+		}
+		info, err := f.Stat()
+		if err != nil {
+			f.Close()
+			return nil, nil, noop, err
+		}
+		img, err := squashfs.New(deps).Open(device.NewFile(f, info.Size()))
 		if err != nil {
 			f.Close()
 			return nil, nil, noop, err

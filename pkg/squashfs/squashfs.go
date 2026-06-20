@@ -56,12 +56,6 @@ func (e *Squashfs) Format(dev device.Device, _ image.Params) (image.Image, error
 	return &sqImage{Mem: mem, dev: dev, eng: e}, nil
 }
 
-// Open is not supported: squashfs is read-only on disk, so mutation is done by
-// rebuilding from a freshly described tree.
-func (e *Squashfs) Open(device.Device) (image.Image, error) {
-	return nil, errors.New("squashfs: Open is not supported; rebuild instead")
-}
-
 // Finalize serialises the tree into a squashfs archive on the device.
 func (img *sqImage) Finalize() error {
 	w := newSwriter(img.dev, img.eng.comp, img.eng.blockSize, img.eng.deps.Clock)

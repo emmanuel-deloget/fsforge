@@ -52,3 +52,34 @@ func (s superblock) marshal() []byte {
 func inodeRef(blockStart uint32, offset uint16) uint64 {
 	return uint64(blockStart)<<16 | uint64(offset)
 }
+
+func parseSuperblock(b []byte) (superblock, error) {
+	le := binary.LittleEndian
+	var s superblock
+	if le.Uint32(b[0:]) != magic {
+		return s, errBadMagic
+	}
+	s.inodes = le.Uint32(b[4:])
+	s.mkfsTime = le.Uint32(b[8:])
+	s.blockSize = le.Uint32(b[12:])
+	s.fragments = le.Uint32(b[16:])
+	s.compression = le.Uint16(b[20:])
+	s.blockLog = le.Uint16(b[22:])
+	s.flags = le.Uint16(b[24:])
+	s.noIDs = le.Uint16(b[26:])
+	s.rootInode = le.Uint64(b[32:])
+	s.bytesUsed = le.Uint64(b[40:])
+	s.idTableStart = le.Uint64(b[48:])
+	s.xattrTableStart = le.Uint64(b[56:])
+	s.inodeTableStart = le.Uint64(b[64:])
+	s.dirTableStart = le.Uint64(b[72:])
+	s.fragTableStart = le.Uint64(b[80:])
+	s.lookupTableStart = le.Uint64(b[88:])
+	return s, nil
+}
+
+var errBadMagic = errorString("squashfs: bad magic")
+
+type errorString string
+
+func (e errorString) Error() string { return string(e) }
