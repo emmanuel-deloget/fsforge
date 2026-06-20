@@ -41,9 +41,14 @@ document explains the *why*.
 
 ```bash
 go build ./...
-go test ./...                      # pure-Go, unprivileged
-go test -tags conformance ./...    # privileged CI only (needs mkfs/fsck/mount)
+go test ./...                          # pure-Go, unprivileged
+go test -tags conformance ./pkg/ext/   # runs e2fsck (host binary or container)
 ```
+
+The conformance tests validate ext images with real e2fsprogs: they use a host
+`e2fsck` if present, otherwise a container runtime (podman/docker) pulling
+e2fsprogs on demand. They skip when neither is available. squashfs is validated
+by `unsquashfs` in its normal test.
 
 ## Commit conventions
 

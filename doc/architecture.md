@@ -173,9 +173,11 @@ that ext2 validates the whole architecture before ext4's complexity.
 | **M6**    | todo   | **FAT12/16/32**, **ISO9660**.                                 |
 | later     | todo   | **erofs** / **UDF** if demand warrants. NTFS/btrfs/ZFS: out of scope until a correct *writer* is realistic. |
 
-> e2fsck/loopback conformance for ext2/ext4 is pending the privileged CI harness;
-> in development those engines are validated by the extent/indirect-aware
-> round-trip reader. squashfs is validated end-to-end by `unsquashfs`.
+> Conformance: ext2 and ext4 images pass `e2fsck -fn` cleanly (e2fsprogs 1.47.4),
+> run via `internal/conformance` either from a host binary or a container
+> runtime (`go test -tags conformance ./pkg/ext/`). squashfs is validated
+> end-to-end by `unsquashfs`. The round-trip reader remains the fast in-process
+> check. Loopback-mount round-trips are still a CI add-on.
 
 ## 11. References
 
