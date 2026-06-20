@@ -17,6 +17,7 @@ func disk(args []string) error {
 	fsSet := flag.NewFlagSet("disk", flag.ContinueOnError)
 	output := fsSet.String("output", "", "output disk image file")
 	sizeStr := fsSet.String("size", "", "total disk size, e.g. 512M, 2G")
+	scheme := fsSet.String("scheme", "gpt", "partition scheme: gpt or mbr")
 	reproducible := fsSet.Bool("reproducible", false, "deterministic output")
 	var specs partFlags
 	fsSet.Var(&specs, "part", "partition as <role>:<fstype>:<source>:<size>; repeatable. "+
@@ -44,11 +45,23 @@ func disk(args []string) error {
 	}
 	dev := device.NewFile(f, total)
 
-	pspecs := make([]partition.Spec, len(specs))
-	for i, s := range specs {
-		pspecs[i] = partition.Spec{Type: roleGUID(s.role), Name: s.role, Size: s.size}
+	var parts []partition.Partition
+	switch *scheme {
+	case "gpt":
+		pspecs := make([]partition.Spec, len(specs))
+		for i, s := range specs {
+			pspecs[i] = partition.Spec{Type: roleGUID(s.role), Name: s.role, Size: s.size}
+		}
+		parts, err = partition.FormatGPT(dev, deps, pspecs)
+	case "mbr":
+		mspecs := make([]partition.MBRSpec, len(specs))
+		for i, s := range specs {
+			mspecs[i] = partition.MBRSpec{Type: roleMBRType(s.role), Size: s.size, Bootable: s.role == "esp"}
+		}
+		parts, err = partition.FormatMBR(dev, mspecs)
+	default:
+		return fmt.Errorf("unknown scheme %q (want gpt or mbr)", *scheme)
 	}
-	parts, err := partition.FormatGPT(dev, deps, pspecs)
 	if err != nil {
 		return err
 	}
@@ -90,6 +103,15 @@ func roleGUID(role string) partition.Type {
 		return partition.TypeLinuxRoot
 	default:
 		return partition.TypeLinuxData
+	}
+}
+
+func roleMBRType(role string) byte {
+	switch role {
+	case "esp", "efi":
+		return partition.MBRTypeEFI
+	default:
+		return partition.MBRTypeLinux
 	}
 }
 
