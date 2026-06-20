@@ -117,6 +117,7 @@ Follows the conventions of `golang-standards/project-layout`.
 | `pkg/compress/`          | `Compressor` interface, registry, pure-Go codec adapters.        |
 | `pkg/ext/`               | ext2/3/4 engine.                                                  |
 | `pkg/squashfs/`          | squashfs engine.                                                  |
+| `pkg/oci/`               | OCI image read (flatten) and write (build); tree as the hub.      |
 | `internal/binio/`        | Module-private checksum/binary helpers.                           |
 | `internal/conformance/`  | Privileged, build-tagged test harness (official-tool validation).|
 | `doc/`                   | This document and design notes.                                   |
@@ -166,9 +167,11 @@ that ext2 validates the whole architecture before ext4's complexity.
 | **M1**    | ✅ done | **ext2** create: full layout, indirect blocks, round-trip reader. |
 | **M2**    | ✅ done | **ext4** create via an extents variant (inline extent tree, 256-byte inodes, FILETYPE+EXTENTS). 64bit/metadata_csum/htree/flex_bg and extent-tree index nodes remain. |
 | **M4**    | ✅ done | **squashfs** 4.0 create (non-fragmented, zlib), validated against `unsquashfs`. |
-| **CLI**   | ✅ done | `fsforge mkfs` builds ext2/ext4/squashfs from a source directory, reproducibly. |
-| **M0**    | partial | `device` backends done; MBR/GPT and the privileged conformance harness remain. |
-| **M3**    | next   | **ext2/4** offline mutation (re-Finalize must avoid read-before-overwrite of lazy sources on the live device). |
+| **M3**    | ✅ done | **ext2/4** offline mutation via staged re-layout (scratch device avoids read-before-overwrite); mutated images pass e2fsck. |
+| **OCI**   | ✅ done | Read (flatten layers+whiteouts → tree) and write (tree → tar layer + config/manifest/index) of OCI image layouts. Validated by podman: it pulls fsforge-built images, and fsforge flattens real `podman save` output. |
+| **convert** | ✅ done | `fsforge convert` bridges any source to any sink through the tree: dir/ext2/ext4/oci → dir/ext2/ext4/squashfs/oci. `oci→ext4` of real alpine passes e2fsck. |
+| **CLI**   | ✅ done | `fsforge mkfs` builds ext2/ext4/squashfs from a directory; `fsforge convert` converts between formats. Reproducible. |
+| **M0**    | partial | `device` backends done; MBR/GPT and a CI wiring of the conformance harness remain. |
 | **M5**    | todo   | **exFAT** create + mutate.                                     |
 | **M6**    | todo   | **FAT12/16/32**, **ISO9660**.                                 |
 | later     | todo   | **erofs** / **UDF** if demand warrants. NTFS/btrfs/ZFS: out of scope until a correct *writer* is realistic. |

@@ -65,6 +65,10 @@ func containerRuntime() string {
 	return ""
 }
 
+// ContainerRuntime returns the available container runtime ("podman"/"docker")
+// or "" if none, for conformance tests that drive a runtime directly.
+func ContainerRuntime() string { return containerRuntime() }
+
 func shellJoin(args []string) string {
 	s := ""
 	for i, a := range args {
