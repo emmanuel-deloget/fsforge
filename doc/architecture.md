@@ -117,6 +117,7 @@ Follows the conventions of `golang-standards/project-layout`.
 | `pkg/compress/`          | `Compressor` interface, registry, pure-Go codec adapters.        |
 | `pkg/ext/`               | ext2/3/4 engine.                                                  |
 | `pkg/squashfs/`          | squashfs engine.                                                  |
+| `pkg/fat/`               | FAT32 engine (ESP/boot/data volumes).                             |
 | `pkg/oci/`               | OCI image read (flatten) and write (build); tree as the hub.      |
 | `internal/binio/`        | Module-private checksum/binary helpers.                           |
 | `internal/conformance/`  | Privileged, build-tagged test harness (official-tool validation).|
@@ -172,8 +173,9 @@ that ext2 validates the whole architecture before ext4's complexity.
 | **convert** | ✅ done | `fsforge convert` bridges any source to any sink through the tree: dir/ext2/ext4/oci → dir/ext2/ext4/squashfs/oci. `oci→ext4` of real alpine passes e2fsck. |
 | **CLI**   | ✅ done | `fsforge mkfs` builds ext2/ext4/squashfs from a directory; `fsforge convert` converts between formats. Reproducible. |
 | **M0**    | partial | `device` backends done; MBR/GPT and a CI wiring of the conformance harness remain. |
+| **M6a**   | ✅ done | **FAT32** create (LFN long names + generated 8.3, subdirs, volume label), validated by `fsck.fat`. Wired into mkfs and convert sinks. |
 | **M5**    | todo   | **exFAT** create + mutate.                                     |
-| **M6**    | todo   | **FAT12/16/32**, **ISO9660**.                                 |
+| **M6b**   | todo   | **FAT12/16**, **ISO9660**.                                    |
 | later     | todo   | **erofs** / **UDF** if demand warrants. NTFS/btrfs/ZFS: out of scope until a correct *writer* is realistic. |
 
 > Conformance: ext2 and ext4 images pass `e2fsck -fn` cleanly (e2fsprogs 1.47.4),

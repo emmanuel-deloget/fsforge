@@ -13,6 +13,7 @@ import (
 
 	"github.com/emmanuel-deloget/fsforge/pkg/device"
 	"github.com/emmanuel-deloget/fsforge/pkg/ext"
+	"github.com/emmanuel-deloget/fsforge/pkg/fat"
 	"github.com/emmanuel-deloget/fsforge/pkg/image"
 	"github.com/emmanuel-deloget/fsforge/pkg/squashfs"
 	"github.com/emmanuel-deloget/fsforge/pkg/tree"
@@ -105,6 +106,8 @@ func engineFor(typ string, deps image.Deps, blockSize uint32) (image.Filesystem,
 		return ext.NewExt2(deps), nil
 	case "ext4":
 		return ext.NewExt4(deps), nil
+	case "fat", "fat32":
+		return fat.New(deps), nil
 	case "squashfs":
 		var opts []squashfs.Option
 		if blockSize != 0 {
