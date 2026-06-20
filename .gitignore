@@ -1,0 +1,14 @@
+# Binaries
+/fsforge
+/bin/
+*.test
+*.out
+
+# Image artifacts produced by tests/tooling
+*.img
+*.squashfs
+
+# Go workspace / coverage
+go.work
+go.work.sum
+coverage.*
