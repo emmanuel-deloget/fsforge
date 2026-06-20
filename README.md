@@ -41,3 +41,7 @@ doc/           architecture & design notes
 go build ./...
 go test ./...
 ```
+
+## License
+
+[MIT](LICENSE) © Emmanuel Deloget

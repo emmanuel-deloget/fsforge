@@ -1,3 +1,3 @@
-module github.com/edeloget/fsforge
+module github.com/emmanuel-deloget/fsforge
 
 go 1.26

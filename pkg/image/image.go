@@ -6,9 +6,9 @@
 package image
 
 import (
-	"github.com/edeloget/fsforge/pkg/alloc"
-	"github.com/edeloget/fsforge/pkg/device"
-	"github.com/edeloget/fsforge/pkg/tree"
+	"github.com/emmanuel-deloget/fsforge/pkg/alloc"
+	"github.com/emmanuel-deloget/fsforge/pkg/device"
+	"github.com/emmanuel-deloget/fsforge/pkg/tree"
 )
 
 // Filesystem is the contract every engine (ext, squashfs, …) implements.
