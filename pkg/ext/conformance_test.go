@@ -9,15 +9,21 @@ import (
 
 	"github.com/emmanuel-deloget/fsforge/internal/conformance"
 	"github.com/emmanuel-deloget/fsforge/pkg/device"
+	"github.com/emmanuel-deloget/fsforge/pkg/tree"
 )
 
 // These tests validate fsforge ext images against the real e2fsprogs (on the
 // host or via a container). Run with: go test -tags conformance ./pkg/ext/
 
-func TestExt2Conformance(t *testing.T) { runE2fsck(t, NewExt2(testDeps()), 16<<20) }
-func TestExt4Conformance(t *testing.T) { runE2fsck(t, NewExt4(testDeps()), 64<<20) }
+func TestExt2Conformance(t *testing.T) { runE2fsck(t, NewExt2(testDeps()), 16<<20, false) }
+func TestExt4Conformance(t *testing.T) { runE2fsck(t, NewExt4(testDeps()), 64<<20, false) }
 
-func runE2fsck(t *testing.T, e *Engine, size int64) {
+// Mutated images must also pass e2fsck, proving the staged re-layout produces a
+// consistent filesystem.
+func TestExt2MutationConformance(t *testing.T) { runE2fsck(t, NewExt2(testDeps()), 16<<20, true) }
+func TestExt4MutationConformance(t *testing.T) { runE2fsck(t, NewExt4(testDeps()), 64<<20, true) }
+
+func runE2fsck(t *testing.T, e *Engine, size int64, mutate bool) {
 	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "fsforge-*.img")
 	if err != nil {
@@ -30,6 +36,23 @@ func runE2fsck(t *testing.T, e *Engine, size int64) {
 
 	dev := device.NewFile(f, size)
 	buildSampleWith(t, e, dev, 400*1024)
+
+	if mutate {
+		opened, err := e.Open(dev)
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		root := opened.Root()
+		if _, err := root.Create("added.txt", tree.Bytes("mutated\n"), meta(0o644)); err != nil {
+			t.Fatal(err)
+		}
+		if err := root.Remove("shortlink"); err != nil {
+			t.Fatal(err)
+		}
+		if err := opened.Finalize(); err != nil {
+			t.Fatalf("Finalize (mutate): %v", err)
+		}
+	}
 	if err := f.Sync(); err != nil {
 		t.Fatal(err)
 	}

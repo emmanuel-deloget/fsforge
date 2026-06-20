@@ -69,6 +69,7 @@ type ext2Image struct {
 	params image.Params
 	deps   image.Deps
 	eng    *Engine
+	mutate bool // opened from an existing image: stage layout to avoid corruption
 }
 
 // Format lays down a fresh, empty filesystem on dev.
@@ -90,9 +91,20 @@ var errTooManyInodes = errors.New("ext: not enough inodes for the tree")
 // Finalize runs the deterministic layout pass: assign inode numbers, reserve
 // metadata, allocate and write data, then bitmaps, inode tables, descriptors
 // and superblocks.
+//
+// For a mutated image (opened with Open), layout targets a scratch device while
+// file contents keep reading the original device, then the result is copied
+// back. This avoids overwriting blocks that lazy fileSources still need to read.
 func (img *ext2Image) Finalize() error {
-	l := &layouter{
-		dev:          img.dev,
+	if img.mutate {
+		return img.finalizeStaged()
+	}
+	return img.newLayouter(img.dev).run(img.RootNode())
+}
+
+func (img *ext2Image) newLayouter(target device.Device) *layouter {
+	return &layouter{
+		dev:          target,
 		geo:          img.geo,
 		deps:         img.deps,
 		params:       img.params,
@@ -106,7 +118,6 @@ func (img *ext2Image) Finalize() error {
 		built:        make(map[*image.Node]bool),
 		usedInos:     make(map[uint32]bool),
 	}
-	return l.run(img.RootNode())
 }
 
 type layouter struct {

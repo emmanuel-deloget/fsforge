@@ -200,6 +200,62 @@ func TestExt4RoundTrip(t *testing.T) {
 	}
 }
 
+// mutateAndCheck opens an image, adds and removes files, re-Finalizes, then
+// reopens and verifies. The key assertion is that an unchanged large file keeps
+// its exact contents despite block relocation — i.e. the staged re-layout did
+// not overwrite blocks the lazy sources still needed.
+func mutateAndCheck(t *testing.T, e *Engine, dev device.Device, bigSize int) {
+	t.Helper()
+	opened, err := e.Open(dev)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	root := opened.Root()
+	if _, err := root.Create("added.txt", tree.Bytes("hello from mutation\n"), meta(0o644)); err != nil {
+		t.Fatalf("Create added: %v", err)
+	}
+	if err := root.Remove("shortlink"); err != nil {
+		t.Fatalf("Remove shortlink: %v", err)
+	}
+	if err := opened.Finalize(); err != nil {
+		t.Fatalf("Finalize (mutate): %v", err)
+	}
+
+	reopened, err := e.Open(dev)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	root2 := reopened.(rootNoder).RootNode()
+
+	if n := childByName(root2, "added.txt"); n == nil || string(readAll(t, n.Content)) != "hello from mutation\n" {
+		t.Errorf("added.txt missing or wrong")
+	}
+	if childByName(root2, "shortlink") != nil {
+		t.Errorf("shortlink should be removed")
+	}
+	// The hazard check: bigfile content must be byte-for-byte intact.
+	want := bytes.Repeat([]byte("0123456789abcdef"), bigSize/16)
+	if got := readAll(t, childByName(root2, "bigfile").Content); !bytes.Equal(got, want) {
+		t.Errorf("bigfile corrupted by mutation: %d vs %d bytes", len(got), len(want))
+	}
+	etc := childByName(root2, "etc")
+	if etc == nil || string(readAll(t, childByName(etc, "hosts").Content)) != "127.0.0.1 localhost\n" {
+		t.Errorf("etc/hosts lost in mutation")
+	}
+}
+
+func TestMutationExt2(t *testing.T) {
+	dev := device.NewMem(16 << 20)
+	buildSample(t, dev, 400*1024)
+	mutateAndCheck(t, NewExt2(testDeps()), dev, 400*1024)
+}
+
+func TestMutationExt4(t *testing.T) {
+	dev := device.NewMem(32 << 20)
+	buildSampleWith(t, NewExt4(testDeps()), dev, 400*1024)
+	mutateAndCheck(t, NewExt4(testDeps()), dev, 400*1024)
+}
+
 func TestExt4Reproducible(t *testing.T) {
 	d1 := device.NewMem(32 << 20)
 	d2 := device.NewMem(32 << 20)

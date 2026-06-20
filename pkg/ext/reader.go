@@ -68,6 +68,7 @@ func (e *Engine) Open(dev device.Device) (image.Image, error) {
 		params: image.Params{BlockSize: uint32(r.bs), Label: label},
 		deps:   deps,
 		eng:    eng,
+		mutate: true,
 	}, nil
 }
 
