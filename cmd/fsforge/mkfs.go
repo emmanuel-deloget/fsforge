@@ -15,6 +15,7 @@ import (
 	"github.com/emmanuel-deloget/fsforge/pkg/ext"
 	"github.com/emmanuel-deloget/fsforge/pkg/fat"
 	"github.com/emmanuel-deloget/fsforge/pkg/image"
+	"github.com/emmanuel-deloget/fsforge/pkg/iso"
 	"github.com/emmanuel-deloget/fsforge/pkg/squashfs"
 	"github.com/emmanuel-deloget/fsforge/pkg/tree"
 )
@@ -75,8 +76,13 @@ func mkfs(args []string) error {
 		return err
 	}
 
-	if *typ == "squashfs" {
+	switch *typ {
+	case "squashfs":
 		if err := trimSquashfs(f); err != nil {
+			return err
+		}
+	case "iso", "iso9660":
+		if err := trimISO(f); err != nil {
 			return err
 		}
 	}
@@ -108,6 +114,8 @@ func engineFor(typ string, deps image.Deps, blockSize uint32) (image.Filesystem,
 		return ext.NewExt4(deps), nil
 	case "fat", "fat32":
 		return fat.New(deps), nil
+	case "iso", "iso9660":
+		return iso.New(deps), nil
 	case "squashfs":
 		var opts []squashfs.Option
 		if blockSize != 0 {
@@ -120,7 +128,7 @@ func engineFor(typ string, deps image.Deps, blockSize uint32) (image.Filesystem,
 }
 
 func deviceSize(typ, sizeStr, source string, blockSize uint32) (int64, error) {
-	if typ == "squashfs" {
+	if typ == "squashfs" || typ == "iso" || typ == "iso9660" {
 		total, err := dirSize(source)
 		if err != nil {
 			return 0, err
@@ -246,4 +254,14 @@ func trimSquashfs(f *os.File) error {
 	}
 	bytesUsed := int64(binary.LittleEndian.Uint64(hdr[40:]))
 	return f.Truncate(bytesUsed)
+}
+
+// trimISO shrinks the output to the ISO volume space (PVD volume space size in
+// logical blocks of 2048 bytes, at sector 16 offset 80).
+func trimISO(f *os.File) error {
+	b := make([]byte, 4)
+	if _, err := f.ReadAt(b, 16*2048+80); err != nil {
+		return err
+	}
+	return f.Truncate(int64(binary.LittleEndian.Uint32(b)) * 2048)
 }

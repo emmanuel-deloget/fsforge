@@ -138,7 +138,7 @@ func writeTree(root *image.Node, w writeParams) error {
 	case "dir":
 		return extractDir(root, w.path)
 
-	case "ext2", "ext4", "squashfs", "fat", "fat32":
+	case "ext2", "ext4", "squashfs", "fat", "fat32", "iso", "iso9660":
 		eng, err := engineFor(w.kind, w.deps, w.blockSize)
 		if err != nil {
 			return err
@@ -165,8 +165,11 @@ func writeTree(root *image.Node, w writeParams) error {
 		if err := img.Finalize(); err != nil {
 			return err
 		}
-		if w.kind == "squashfs" {
+		switch w.kind {
+		case "squashfs":
 			return trimSquashfs(f)
+		case "iso", "iso9660":
+			return trimISO(f)
 		}
 		return nil
 
@@ -285,7 +288,7 @@ func sortedEntries(n *image.Node) []image.Entry {
 // sinkSize chooses the backing size for an image sink. ext requires an explicit
 // size; squashfs is sized from the tree and trimmed afterwards.
 func sinkSize(kind, sizeStr string, root *image.Node, blockSize uint32) (int64, error) {
-	if kind == "squashfs" {
+	if kind == "squashfs" || kind == "iso" || kind == "iso9660" {
 		total := treeBytes(root)
 		return total + total/2 + (16 << 20), nil
 	}

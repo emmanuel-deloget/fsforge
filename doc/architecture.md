@@ -118,6 +118,7 @@ Follows the conventions of `golang-standards/project-layout`.
 | `pkg/ext/`               | ext2/3/4 engine.                                                  |
 | `pkg/squashfs/`          | squashfs engine.                                                  |
 | `pkg/fat/`               | FAT32 engine (ESP/boot/data volumes).                             |
+| `pkg/iso/`               | ISO9660 + Rock Ridge engine (CD/DVD images).                      |
 | `pkg/partition/`         | GPT partition tables; carves a disk into device.Sections.         |
 | `pkg/oci/`               | OCI image read (flatten) and write (build); tree as the hub.      |
 | `internal/binio/`        | Module-private checksum/binary helpers.                           |
@@ -175,8 +176,9 @@ that ext2 validates the whole architecture before ext4's complexity.
 | **CLI**   | ✅ done | `fsforge mkfs` builds ext2/ext4/squashfs from a directory; `fsforge convert` converts between formats. Reproducible. |
 | **M0/GPT** | ✅ done | GPT partition tables (protective MBR + primary/backup headers + entry array, CRC32, deterministic GUIDs). `fsforge disk` builds a full GPT disk (ESP FAT32 + ext4 root); validated by sfdisk and per-partition fsck. MBR-only tables remain. |
 | **M6a**   | ✅ done | **FAT32** create (LFN long names + generated 8.3, subdirs, volume label), validated by `fsck.fat`. Wired into mkfs and convert sinks. |
+| **M6b**   | ✅ done | **ISO9660 + Rock Ridge** create (POSIX names/perms, symlinks, devices; single-extent files), validated by `xorriso` extract. `oci→iso` of real alpine round-trips. Wired into mkfs and convert. |
 | **M5**    | todo   | **exFAT** create + mutate.                                     |
-| **M6b**   | todo   | **FAT12/16**, **ISO9660**.                                    |
+| **M6c**   | todo   | **FAT12/16**, ISO9660 deep-relocation/CE for very long names.  |
 | later     | todo   | **erofs** / **UDF** if demand warrants. NTFS/btrfs/ZFS: out of scope until a correct *writer* is realistic. |
 
 > Conformance: ext2 and ext4 images pass `e2fsck -fn` cleanly (e2fsprogs 1.47.4),
