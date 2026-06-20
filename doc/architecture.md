@@ -175,10 +175,11 @@ that ext2 validates the whole architecture before ext4's complexity.
 | **convert** | ✅ done | `fsforge convert` bridges any source to any sink through the tree: dir/ext2/ext4/oci → dir/ext2/ext4/squashfs/oci. `oci→ext4` of real alpine passes e2fsck. |
 | **CLI**   | ✅ done | `fsforge mkfs` builds ext2/ext4/squashfs from a directory; `fsforge convert` converts between formats. Reproducible. |
 | **M0/GPT** | ✅ done | GPT partition tables (protective MBR + primary/backup headers + entry array, CRC32, deterministic GUIDs). `fsforge disk` builds a full GPT disk (ESP FAT32 + ext4 root); validated by sfdisk and per-partition fsck. MBR-only tables remain. |
-| **M6a**   | ✅ done | **FAT32** create (LFN long names + generated 8.3, subdirs, volume label), validated by `fsck.fat`. Wired into mkfs and convert sinks. |
+| **M6a**   | ✅ done | **FAT12/16/32** create (auto type by size or forced; LFN + generated 8.3, fixed root for 12/16, FSInfo for 32), all validated by `fsck.fat`. Wired into mkfs and convert. |
 | **M6b**   | ✅ done | **ISO9660 + Rock Ridge** create (POSIX names/perms, symlinks, devices; single-extent files), validated by `xorriso` extract. `oci→iso` of real alpine round-trips. Wired into mkfs and convert. |
+| **MBR**   | ✅ done | MBR partition tables (up to 4 primaries, bootable flag), validated by sfdisk; `disk -scheme mbr`. |
 | **M5**    | todo   | **exFAT** create + mutate.                                     |
-| **M6c**   | todo   | **FAT12/16**, ISO9660 deep-relocation/CE for very long names.  |
+| **M6c**   | todo   | ISO9660 deep-relocation/CE for very long names; squashfs reader. |
 | later     | todo   | **erofs** / **UDF** if demand warrants. NTFS/btrfs/ZFS: out of scope until a correct *writer* is realistic. |
 
 > Conformance: ext2 and ext4 images pass `e2fsck -fn` cleanly (e2fsprogs 1.47.4),
