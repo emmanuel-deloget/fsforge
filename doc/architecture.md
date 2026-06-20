@@ -161,17 +161,21 @@ in-process levels plus an external one:
 All entries are **write targets**. Ordering is by value/effort and by the fact
 that ext2 validates the whole architecture before ext4's complexity.
 
-| Milestone | Scope                                                                   |
-|-----------|-------------------------------------------------------------------------|
-| **M0**    | `device` backends + MBR/GPT + test harness + privileged CI green.       |
-| **M1**    | **ext2** create (read + create + `e2fsck` clean). Validates the pipeline.|
-| **M2**    | **ext4** create (extents, 64bit, metadata_csum, htree, flex_bg).        |
-| **M3**    | **ext2/4** offline mutation (lazy load, journal replay+reset, refinalize).|
-| **M4**    | **squashfs** create (gzip/zstd).                                        |
-| **M5**    | **exFAT** create + mutate.                                              |
-| **M6**    | **FAT12/16/32**, **ISO9660** (low complexity; may land earlier).        |
-| later     | **erofs** / **UDF** if demand warrants. NTFS/btrfs/ZFS: out of scope    |
-|           | until a correct *writer* is realistic.                                  |
+| Milestone | Status | Scope                                                          |
+|-----------|--------|----------------------------------------------------------------|
+| **M1**    | ✅ done | **ext2** create: full layout, indirect blocks, round-trip reader. |
+| **M2**    | ✅ done | **ext4** create via an extents variant (inline extent tree, 256-byte inodes, FILETYPE+EXTENTS). 64bit/metadata_csum/htree/flex_bg and extent-tree index nodes remain. |
+| **M4**    | ✅ done | **squashfs** 4.0 create (non-fragmented, zlib), validated against `unsquashfs`. |
+| **CLI**   | ✅ done | `fsforge mkfs` builds ext2/ext4/squashfs from a source directory, reproducibly. |
+| **M0**    | partial | `device` backends done; MBR/GPT and the privileged conformance harness remain. |
+| **M3**    | next   | **ext2/4** offline mutation (re-Finalize must avoid read-before-overwrite of lazy sources on the live device). |
+| **M5**    | todo   | **exFAT** create + mutate.                                     |
+| **M6**    | todo   | **FAT12/16/32**, **ISO9660**.                                 |
+| later     | todo   | **erofs** / **UDF** if demand warrants. NTFS/btrfs/ZFS: out of scope until a correct *writer* is realistic. |
+
+> e2fsck/loopback conformance for ext2/ext4 is pending the privileged CI harness;
+> in development those engines are validated by the extent/indirect-aware
+> round-trip reader. squashfs is validated end-to-end by `unsquashfs`.
 
 ## 11. References
 
