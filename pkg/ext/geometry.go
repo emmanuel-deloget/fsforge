@@ -45,11 +45,13 @@ func computeGeometry(devSize int64, blockSize, inodeSize uint32) (geometry, erro
 	if blockSize < 1024 || blockSize > 65536 || bits.OnesCount32(blockSize) != 1 {
 		return g, errBlockSize
 	}
-	if devSize <= 0 || uint64(devSize)%uint64(blockSize) != 0 {
+	if devSize <= 0 {
 		return g, errDeviceSize
 	}
 
 	g.blockSize = blockSize
+	// Floor to whole blocks: a backing region (e.g. a GPT partition) need not be
+	// an exact multiple of the block size; the trailing bytes are simply unused.
 	g.totalBlocks = uint64(devSize) / uint64(blockSize)
 	if blockSize == 1024 {
 		g.firstDataBlock = 1

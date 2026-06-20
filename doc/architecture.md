@@ -118,6 +118,7 @@ Follows the conventions of `golang-standards/project-layout`.
 | `pkg/ext/`               | ext2/3/4 engine.                                                  |
 | `pkg/squashfs/`          | squashfs engine.                                                  |
 | `pkg/fat/`               | FAT32 engine (ESP/boot/data volumes).                             |
+| `pkg/partition/`         | GPT partition tables; carves a disk into device.Sections.         |
 | `pkg/oci/`               | OCI image read (flatten) and write (build); tree as the hub.      |
 | `internal/binio/`        | Module-private checksum/binary helpers.                           |
 | `internal/conformance/`  | Privileged, build-tagged test harness (official-tool validation).|
@@ -172,7 +173,7 @@ that ext2 validates the whole architecture before ext4's complexity.
 | **OCI**   | ✅ done | Read (flatten layers+whiteouts → tree) and write (tree → tar layer + config/manifest/index) of OCI image layouts. Validated by podman: it pulls fsforge-built images, and fsforge flattens real `podman save` output. |
 | **convert** | ✅ done | `fsforge convert` bridges any source to any sink through the tree: dir/ext2/ext4/oci → dir/ext2/ext4/squashfs/oci. `oci→ext4` of real alpine passes e2fsck. |
 | **CLI**   | ✅ done | `fsforge mkfs` builds ext2/ext4/squashfs from a directory; `fsforge convert` converts between formats. Reproducible. |
-| **M0**    | partial | `device` backends done; MBR/GPT and a CI wiring of the conformance harness remain. |
+| **M0/GPT** | ✅ done | GPT partition tables (protective MBR + primary/backup headers + entry array, CRC32, deterministic GUIDs). `fsforge disk` builds a full GPT disk (ESP FAT32 + ext4 root); validated by sfdisk and per-partition fsck. MBR-only tables remain. |
 | **M6a**   | ✅ done | **FAT32** create (LFN long names + generated 8.3, subdirs, volume label), validated by `fsck.fat`. Wired into mkfs and convert sinks. |
 | **M5**    | todo   | **exFAT** create + mutate.                                     |
 | **M6b**   | todo   | **FAT12/16**, **ISO9660**.                                    |

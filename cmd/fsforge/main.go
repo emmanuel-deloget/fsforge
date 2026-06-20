@@ -18,6 +18,8 @@ func main() {
 		err = mkfs(os.Args[2:])
 	case "convert":
 		err = convert(os.Args[2:])
+	case "disk":
+		err = disk(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 		return
@@ -35,8 +37,9 @@ func usage() {
 	fmt.Fprint(os.Stderr, `fsforge — pure-Go filesystem image builder
 
 usage:
-  fsforge mkfs -type <ext2|ext4|squashfs> -source <dir> -output <file> [options]
+  fsforge mkfs -type <ext2|ext4|fat|squashfs> -source <dir> -output <file> [options]
   fsforge convert -from <kind>:<path> -to <kind>:<path> [options]
+  fsforge disk -output <file> -size <size> -part <role>:<fstype>:<source>:<size> ...
 
 mkfs options:
   -type         filesystem type (ext2, ext4, squashfs)        [required]
@@ -56,5 +59,15 @@ convert: <kind> is dir, ext2, ext4, squashfs (sink only) or oci.
 
   e.g. fsforge convert -from oci:./alpine-oci -to ext4:rootfs.img -size 256M
        fsforge convert -from dir:./rootfs    -to oci:./image-oci -ref app:v1
+
+disk: a GPT disk with one or more engine-formatted partitions.
+  -output <file>   output disk image                          [required]
+  -size <size>     total disk size (e.g. 512M, 2G)             [required]
+  -part R:F:S:Z    role R (esp|root|data), fstype F (fat|ext2|ext4),
+                   source dir S, size Z (e.g. 64M or 'rest'); repeatable
+  -reproducible    deterministic output
+
+  e.g. fsforge disk -output disk.img -size 512M \
+         -part esp:fat:./esp:64M -part root:ext4:./rootfs:rest
 `)
 }
