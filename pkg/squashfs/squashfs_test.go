@@ -3,13 +3,14 @@ package squashfs
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/emmanuel-deloget/fsforge/internal/conformance"
 	"github.com/emmanuel-deloget/fsforge/pkg/device"
 	"github.com/emmanuel-deloget/fsforge/pkg/image"
 	"github.com/emmanuel-deloget/fsforge/pkg/tree"
@@ -93,14 +94,9 @@ func TestReproducible(t *testing.T) {
 	}
 }
 
-// TestUnsquashfs validates the image against the reference tool. It is skipped
-// when unsquashfs is unavailable.
+// TestUnsquashfs validates the image against the reference tool, using a host
+// unsquashfs or a container fallback. It is skipped when neither is available.
 func TestUnsquashfs(t *testing.T) {
-	bin, err := exec.LookPath("unsquashfs")
-	if err != nil {
-		t.Skip("unsquashfs not installed")
-	}
-
 	dev := device.NewMem(16 << 20)
 	buildSample(t, dev)
 
@@ -111,8 +107,11 @@ func TestUnsquashfs(t *testing.T) {
 	}
 
 	out := filepath.Join(tmp, "extracted")
-	cmd := exec.Command(bin, "-d", out, "-no-xattrs", imgPath)
-	if combined, err := cmd.CombinedOutput(); err != nil {
+	combined, err := conformance.Unsquashfs(imgPath, out)
+	if errors.Is(err, conformance.ErrUnavailable) {
+		t.Skip("unsquashfs unavailable (no host binary or container runtime)")
+	}
+	if err != nil {
 		t.Fatalf("unsquashfs failed: %v\n%s", err, combined)
 	}
 
