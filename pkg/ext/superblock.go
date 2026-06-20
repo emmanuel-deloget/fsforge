@@ -33,6 +33,8 @@ type superblock struct {
 	featureROCompat uint32
 	uuid            [16]byte
 	volumeName      [16]byte
+	minExtraIsize   uint16
+	wantExtraIsize  uint16
 }
 
 func (s *superblock) marshal() []byte {
@@ -71,6 +73,8 @@ func (s *superblock) marshal() []byte {
 	le.PutUint32(b[100:], s.featureROCompat)
 	copy(b[104:120], s.uuid[:])
 	copy(b[120:136], s.volumeName[:])
+	le.PutUint16(b[348:], s.minExtraIsize)
+	le.PutUint16(b[350:], s.wantExtraIsize)
 	return b
 }
 

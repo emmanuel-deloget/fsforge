@@ -11,39 +11,78 @@ import (
 	"github.com/emmanuel-deloget/fsforge/pkg/tree"
 )
 
-// Ext2 is the ext2 engine. ext3/ext4 will extend it; ext2 is the base layout
-// that validates the whole pipeline.
-type Ext2 struct {
+// variant captures what differs between the ext2/ext3/ext4 on-disk layouts.
+type variant struct {
+	useExtents   bool
+	inodeSize    uint32
+	defBlockSize uint32
+	featIncompat uint32
+	featRoCompat uint32
+}
+
+func ext2Variant() variant {
+	return variant{
+		inodeSize:    goodOldInodeSize,
+		defBlockSize: defaultBlockSize,
+		featIncompat: featIncompatFiletype,
+		featRoCompat: featRoCompatSparseSuper,
+	}
+}
+
+func ext4Variant() variant {
+	return variant{
+		useExtents:   true,
+		inodeSize:    ext4InodeSize,
+		defBlockSize: ext4DefaultBlockSize,
+		featIncompat: featIncompatFiletype | featIncompatExtents,
+		featRoCompat: featRoCompatSparseSuper,
+	}
+}
+
+// Engine implements the ext2/ext3/ext4 family behind image.Filesystem. The
+// variant selects the on-disk layout; everything else is shared.
+type Engine struct {
 	deps image.Deps
+	v    variant
 }
 
 // NewExt2 returns an ext2 engine wired with deps. A nil allocator factory
 // defaults to the deterministic bitmap allocator.
-func NewExt2(deps image.Deps) *Ext2 {
+func NewExt2(deps image.Deps) *Engine { return newEngine(deps, ext2Variant()) }
+
+// NewExt4 returns an ext4 engine (extents, 256-byte inodes) wired with deps.
+func NewExt4(deps image.Deps) *Engine { return newEngine(deps, ext4Variant()) }
+
+func newEngine(deps image.Deps, v variant) *Engine {
 	if deps.Alloc == nil {
 		deps.Alloc = alloc.BitmapFactory{}
 	}
-	return &Ext2{deps: deps}
+	return &Engine{deps: deps, v: v}
 }
 
-// ext2Image is an open ext2 image: a generic editable tree plus the device and
-// geometry needed to serialise it.
+// ext2Image is an open image: a generic editable tree plus the device, geometry
+// and engine needed to serialise it.
 type ext2Image struct {
 	*image.Mem
 	dev    device.Device
 	geo    geometry
 	params image.Params
 	deps   image.Deps
+	eng    *Engine
 }
 
-// Format lays down a fresh, empty ext2 filesystem on dev.
-func (e *Ext2) Format(dev device.Device, p image.Params) (image.Image, error) {
-	geo, err := computeGeometry(dev.Size(), p.BlockSize)
+// Format lays down a fresh, empty filesystem on dev.
+func (e *Engine) Format(dev device.Device, p image.Params) (image.Image, error) {
+	bs := p.BlockSize
+	if bs == 0 {
+		bs = e.v.defBlockSize
+	}
+	geo, err := computeGeometry(dev.Size(), bs, e.v.inodeSize)
 	if err != nil {
 		return nil, err
 	}
 	mem := image.NewMem(e.deps, tree.Meta{Mode: fs.ModeDir | 0o755})
-	return &ext2Image{Mem: mem, dev: dev, geo: geo, params: p, deps: e.deps}, nil
+	return &ext2Image{Mem: mem, dev: dev, geo: geo, params: p, deps: e.deps, eng: e}, nil
 }
 
 var errTooManyInodes = errors.New("ext: not enough inodes for the tree")
@@ -53,16 +92,19 @@ var errTooManyInodes = errors.New("ext: not enough inodes for the tree")
 // and superblocks.
 func (img *ext2Image) Finalize() error {
 	l := &layouter{
-		dev:      img.dev,
-		geo:      img.geo,
-		deps:     img.deps,
-		params:   img.params,
-		al:       img.deps.Alloc.New(img.geo.totalBlocks),
-		used:     make([]bool, img.geo.totalBlocks),
-		inoOf:    make(map[*image.Node]uint32),
-		inodes:   make(map[uint32]*inode),
-		built:    make(map[*image.Node]bool),
-		usedInos: make(map[uint32]bool),
+		dev:          img.dev,
+		geo:          img.geo,
+		deps:         img.deps,
+		params:       img.params,
+		useExtents:   img.eng.v.useExtents,
+		featIncompat: img.eng.v.featIncompat,
+		featRoCompat: img.eng.v.featRoCompat,
+		al:           img.deps.Alloc.New(img.geo.totalBlocks),
+		used:         make([]bool, img.geo.totalBlocks),
+		inoOf:        make(map[*image.Node]uint32),
+		inodes:       make(map[uint32]*inode),
+		built:        make(map[*image.Node]bool),
+		usedInos:     make(map[uint32]bool),
 	}
 	return l.run(img.RootNode())
 }
@@ -72,6 +114,10 @@ type layouter struct {
 	geo    geometry
 	deps   image.Deps
 	params image.Params
+
+	useExtents   bool
+	featIncompat uint32
+	featRoCompat uint32
 
 	al       alloc.Allocator
 	used     []bool
@@ -277,7 +323,7 @@ func (l *layouter) buildSpecial(n *image.Node, ino uint32) {
 func (l *layouter) newInode(n *image.Node, size uint32) *inode {
 	l.curMeta = 0
 	t := uint32(n.ModTime.Unix())
-	return &inode{
+	in := &inode{
 		mode:       extMode(n.Mode),
 		uid:        uint16(n.UID),
 		gid:        uint16(n.GID),
@@ -287,13 +333,28 @@ func (l *layouter) newInode(n *image.Node, size uint32) *inode {
 		mtime:      t,
 		linksCount: uint16(n.Nlink),
 	}
+	if l.geo.inodeSize > goodOldInodeSize {
+		in.extra = extraISize
+	}
+	return in
 }
 
 func sectorsPerBlock(bs uint32) uint32 { return bs / 512 }
 
-// mapBlocks fills i_block from the data blocks, allocating indirect blocks as
-// needed, then sets i_blocks (data + indirect, in 512-byte sectors).
+// mapBlocks records the data blocks in the inode. With extents (ext4) it writes
+// an inline extent tree; otherwise it fills i_block with direct/indirect
+// pointers. It then sets i_blocks (data + metadata, in 512-byte sectors).
 func (l *layouter) mapBlocks(in *inode, data []uint64) error {
+	if l.useExtents {
+		raw, err := buildExtentsInline(data)
+		if err != nil {
+			return err
+		}
+		in.blockRaw = raw
+		in.flags |= extentsFL
+		in.blocks = uint32(uint64(len(data)) * uint64(sectorsPerBlock(l.geo.blockSize)))
+		return nil
+	}
 	idx := 0
 	for ; idx < directBlocks && idx < len(data); idx++ {
 		in.block[idx] = uint32(data[idx])

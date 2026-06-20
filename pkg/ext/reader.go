@@ -28,8 +28,10 @@ type reader struct {
 	descs []groupDesc
 }
 
-// Open loads an existing ext2 image for reading or offline mutation.
-func (e *Ext2) Open(dev device.Device) (image.Image, error) {
+// Open loads an existing image for reading or offline mutation. The variant
+// (ext2 vs ext4) is recovered from the superblock features so a re-Finalize
+// preserves the on-disk format.
+func (e *Engine) Open(dev device.Device) (image.Image, error) {
 	r, err := newReader(dev)
 	if err != nil {
 		return nil, err
@@ -40,19 +42,32 @@ func (e *Ext2) Open(dev device.Device) (image.Image, error) {
 		return nil, err
 	}
 
-	geo, err := computeGeometry(dev.Size(), uint32(r.bs))
+	geo, err := computeGeometry(dev.Size(), uint32(r.bs), uint32(r.isize))
 	if err != nil {
 		return nil, err
 	}
 	deps := e.deps
 	deps.UUID = image.FixedUUID{V: r.sb.uuid} // preserve identity across re-finalize
 	label := strings.TrimRight(string(r.sb.volumeName[:]), "\x00")
+
+	v := variant{
+		useExtents:   r.sb.featureIncompat&featIncompatExtents != 0,
+		inodeSize:    uint32(r.isize),
+		defBlockSize: uint32(r.bs),
+		featIncompat: r.sb.featureIncompat,
+		featRoCompat: r.sb.featureROCompat,
+	}
+	eng := &Engine{deps: deps, v: v}
+	if eng.deps.Alloc == nil {
+		eng.deps.Alloc = e.deps.Alloc
+	}
 	return &ext2Image{
 		Mem:    image.Adopt(deps, root),
 		dev:    dev,
 		geo:    geo,
 		params: image.Params{BlockSize: uint32(r.bs), Label: label},
 		deps:   deps,
+		eng:    eng,
 	}, nil
 }
 
@@ -113,9 +128,19 @@ func (r *reader) readInode(ino uint32) (inode, error) {
 }
 
 // blockList returns the ordered data block numbers backing an inode of the given
-// size.
+// size, from either the extent tree (ext4) or the indirect-block chain (ext2).
 func (r *reader) blockList(in inode, size uint64) ([]uint64, error) {
 	need := ceilDiv(size, r.bs)
+	if in.flags&extentsFL != 0 {
+		blocks, err := parseExtents(in.blockRaw, func(b uint64) ([]byte, error) { return r.readBlock(b) })
+		if err != nil {
+			return nil, err
+		}
+		if uint64(len(blocks)) > need {
+			blocks = blocks[:need]
+		}
+		return blocks, nil
+	}
 	out := make([]uint64, 0, need)
 	for i := 0; i < directBlocks && uint64(len(out)) < need; i++ {
 		out = append(out, uint64(in.block[i]))

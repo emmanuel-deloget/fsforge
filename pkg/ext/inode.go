@@ -19,8 +19,10 @@ type inode struct {
 	blocks     uint32 // in 512-byte units
 	flags      uint32
 	block      [totalIBlocks]uint32
-	// fast-symlink target / inline bytes overlay i_block; written via blockRaw.
-	blockRaw []byte // when non-nil, written verbatim over the i_block area
+	// fast-symlink target / inline bytes / extent tree overlay i_block; written
+	// verbatim over the i_block area when non-nil.
+	blockRaw []byte
+	extra    uint16 // i_extra_isize, for inodes larger than 128 bytes
 }
 
 func (n *inode) marshalInto(b []byte) {
@@ -42,6 +44,9 @@ func (n *inode) marshalInto(b []byte) {
 		for i := 0; i < totalIBlocks; i++ {
 			le.PutUint32(b[40+i*4:], n.block[i])
 		}
+	}
+	if n.extra > 0 && len(b) >= 130 {
+		le.PutUint16(b[128:], n.extra) // i_extra_isize
 	}
 }
 

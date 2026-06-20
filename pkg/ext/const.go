@@ -13,10 +13,13 @@ const (
 	reservedInos = 10 // inodes 1..10 are reserved
 
 	goodOldInodeSize = 128
+	ext4InodeSize    = 256
+	extraISize       = 32 // i_extra_isize for inodes larger than 128 bytes
 	descSize         = 32 // ext2 group descriptor size
 
-	defaultBlockSize = 1024
-	bytesPerInode    = 16384 // sizing heuristic, as in mke2fs
+	defaultBlockSize     = 1024
+	ext4DefaultBlockSize = 4096
+	bytesPerInode        = 16384 // sizing heuristic, as in mke2fs
 
 	// Revision levels.
 	dynamicRev = 1
@@ -28,7 +31,15 @@ const (
 
 	// Feature flags we set.
 	featIncompatFiletype    = 0x0002
+	featIncompatExtents     = 0x0040
 	featRoCompatSparseSuper = 0x0001
+
+	// Inode flags.
+	extentsFL = 0x80000 // inode uses extents (ext4)
+
+	// Extent tree.
+	extentMagic  = 0xF30A
+	extentMaxLen = 32768 // max blocks in one initialised extent
 
 	// Directory entry file types (EXT2_FEATURE_INCOMPAT_FILETYPE).
 	ftUnknown = 0

@@ -25,8 +25,11 @@ func meta(mode fs.FileMode) tree.Meta {
 
 // buildSample populates a representative tree and returns the closed image.
 func buildSample(t *testing.T, dev device.Device, bigSize int) image.Image {
+	return buildSampleWith(t, NewExt2(testDeps()), dev, bigSize)
+}
+
+func buildSampleWith(t *testing.T, e *Engine, dev device.Device, bigSize int) image.Image {
 	t.Helper()
-	e := NewExt2(testDeps())
 	img, err := e.Format(dev, image.Params{Label: "fsforge"})
 	if err != nil {
 		t.Fatalf("Format: %v", err)
@@ -157,6 +160,56 @@ func TestReproducible(t *testing.T) {
 	}
 }
 
+func TestExt4RoundTrip(t *testing.T) {
+	const bigSize = 400 * 1024
+	dev := device.NewMem(32 << 20)
+	buildSampleWith(t, NewExt4(testDeps()), dev, bigSize)
+
+	// Superblock must advertise extents + filetype and 256-byte inodes.
+	raw := make([]byte, superblockSize)
+	if _, err := dev.ReadAt(raw, superblockOffset); err != nil {
+		t.Fatal(err)
+	}
+	sb := parseSuperblock(raw)
+	if sb.featureIncompat&featIncompatExtents == 0 {
+		t.Errorf("extents feature not set")
+	}
+	if sb.inodeSize != ext4InodeSize {
+		t.Errorf("inode size = %d, want %d", sb.inodeSize, ext4InodeSize)
+	}
+
+	opened, err := NewExt4(testDeps()).Open(dev)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	root := opened.(rootNoder).RootNode()
+
+	etc := childByName(root, "etc")
+	if etc == nil {
+		t.Fatal("etc missing")
+	}
+	if got := string(readAll(t, childByName(etc, "hosts").Content)); got != "127.0.0.1 localhost\n" {
+		t.Errorf("hosts = %q", got)
+	}
+	want := bytes.Repeat([]byte("0123456789abcdef"), bigSize/16)
+	if got := readAll(t, childByName(root, "bigfile").Content); !bytes.Equal(got, want) {
+		t.Errorf("bigfile mismatch: %d vs %d bytes", len(got), len(want))
+	}
+	if l := childByName(root, "longlink"); l == nil || l.Link != string(bytes.Repeat([]byte("x"), 200)) {
+		t.Errorf("longlink mismatch")
+	}
+}
+
+func TestExt4Reproducible(t *testing.T) {
+	d1 := device.NewMem(32 << 20)
+	d2 := device.NewMem(32 << 20)
+	buildSampleWith(t, NewExt4(testDeps()), d1, 400*1024)
+	buildSampleWith(t, NewExt4(testDeps()), d2, 400*1024)
+	if !bytes.Equal(d1.Bytes(), d2.Bytes()) {
+		t.Fatal("identical inputs produced different ext4 images")
+	}
+}
+
 func TestSuperblockSane(t *testing.T) {
 	dev := device.NewMem(16 << 20)
 	buildSample(t, dev, 64*1024)
@@ -185,7 +238,7 @@ func TestSuperblockSane(t *testing.T) {
 
 func TestGeometry(t *testing.T) {
 	for _, bs := range []uint32{1024, 4096} {
-		g, err := computeGeometry(64<<20, bs)
+		g, err := computeGeometry(64<<20, bs, 128)
 		if err != nil {
 			t.Fatalf("bs=%d: %v", bs, err)
 		}

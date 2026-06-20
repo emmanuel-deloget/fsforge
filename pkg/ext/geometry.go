@@ -33,11 +33,14 @@ func ceilDiv(a, b uint64) uint64 { return (a + b - 1) / b }
 func roundUp(a, mult uint64) uint64 { return ceilDiv(a, mult) * mult }
 
 // computeGeometry derives the layout for a device of devSize bytes. A blockSize
-// of 0 selects the default.
-func computeGeometry(devSize int64, blockSize uint32) (geometry, error) {
+// or inodeSize of 0 selects the default.
+func computeGeometry(devSize int64, blockSize, inodeSize uint32) (geometry, error) {
 	var g geometry
 	if blockSize == 0 {
 		blockSize = defaultBlockSize
+	}
+	if inodeSize == 0 {
+		inodeSize = goodOldInodeSize
 	}
 	if blockSize < 1024 || blockSize > 65536 || bits.OnesCount32(blockSize) != 1 {
 		return g, errBlockSize
@@ -52,7 +55,7 @@ func computeGeometry(devSize int64, blockSize uint32) (geometry, error) {
 		g.firstDataBlock = 1
 	}
 	g.blocksPerGroup = uint64(blockSize) * 8
-	g.inodeSize = goodOldInodeSize
+	g.inodeSize = inodeSize
 	g.inodesPerBlock = uint64(blockSize) / uint64(g.inodeSize)
 
 	g.numGroups = ceilDiv(g.totalBlocks-g.firstDataBlock, g.blocksPerGroup)

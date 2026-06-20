@@ -98,7 +98,8 @@ func (l *layouter) writeInodeTables() error {
 			if !ok {
 				continue // reserved/free inode: left zero
 			}
-			in.marshalInto(buf[i*uint64(g.inodeSize):])
+			slot := i * uint64(g.inodeSize)
+			in.marshalInto(buf[slot : slot+uint64(g.inodeSize)])
 		}
 		l.writeBlocks(table, buf)
 	}
@@ -190,9 +191,13 @@ func (l *layouter) writeDescriptorsAndSuperblocks() error {
 		errors:          errorsContinue,
 		revLevel:        dynamicRev,
 		firstIno:        firstIno,
-		inodeSize:       goodOldInodeSize,
-		featureIncompat: featIncompatFiletype,
-		featureROCompat: featRoCompatSparseSuper,
+		inodeSize:       uint16(g.inodeSize),
+		featureIncompat: l.featIncompat,
+		featureROCompat: l.featRoCompat,
+	}
+	if g.inodeSize > goodOldInodeSize {
+		sb.minExtraIsize = extraISize
+		sb.wantExtraIsize = extraISize
 	}
 	uuid := l.deps.UUID.UUID()
 	copy(sb.uuid[:], uuid[:])
