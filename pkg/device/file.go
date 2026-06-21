@@ -16,4 +16,6 @@ func NewFile(f *os.File, size int64) *File {
 	return &File{File: f, size: size}
 }
 
+// Size reports the logical device size given to NewFile, which may be smaller
+// than the host file. ReadAt/WriteAt come from the embedded *os.File.
 func (f *File) Size() int64 { return f.size }

@@ -23,8 +23,12 @@ func meta(mode fs.FileMode) tree.Meta {
 }
 
 func buildSample(t *testing.T, dev device.Device) {
+	buildSampleWith(t, New(testDeps(), WithFATBits(32)), dev)
+}
+
+func buildSampleWith(t *testing.T, e *FAT, dev device.Device) {
 	t.Helper()
-	img, err := New(testDeps()).Format(dev, image.Params{Label: "FSFORGE"})
+	img, err := e.Format(dev, image.Params{Label: "FSFORGE"})
 	if err != nil {
 		t.Fatalf("Format: %v", err)
 	}
@@ -96,8 +100,41 @@ func TestSymlinkRejected(t *testing.T) {
 }
 
 func TestTooSmall(t *testing.T) {
-	dev := device.NewMem(8 << 20) // below FAT32 minimum cluster count
+	dev := device.NewMem(16 << 10) // 16 KiB: too small for any FAT layout
 	if _, err := New(testDeps()).Format(dev, image.Params{}); err == nil {
 		t.Fatal("expected error for too-small device")
+	}
+}
+
+func TestFATTypeSelection(t *testing.T) {
+	cases := []struct {
+		size int64
+		bits int
+	}{
+		{2 << 20, 12},   // ~2 MiB -> FAT12
+		{32 << 20, 16},  // 32 MiB -> FAT16
+		{600 << 20, 32}, // 600 MiB -> FAT32
+	}
+	for _, c := range cases {
+		g, err := computeGeometry(c.size, 0)
+		if err != nil {
+			t.Fatalf("size %d: %v", c.size, err)
+		}
+		if g.fatBits != c.bits {
+			t.Errorf("size %d: fatBits = %d, want %d", c.size, g.fatBits, c.bits)
+		}
+	}
+}
+
+func TestFAT16Reproducible(t *testing.T) {
+	d1 := device.NewMem(32 << 20)
+	d2 := device.NewMem(32 << 20)
+	buildSampleWith(t, New(testDeps(), WithFATBits(16)), d1)
+	buildSampleWith(t, New(testDeps(), WithFATBits(16)), d2)
+	if !bytes.Equal(d1.Bytes(), d2.Bytes()) {
+		t.Fatal("identical inputs produced different FAT16 images")
+	}
+	if string(d1.Bytes()[54:62]) != "FAT16   " {
+		t.Errorf("fs type = %q", d1.Bytes()[54:62])
 	}
 }

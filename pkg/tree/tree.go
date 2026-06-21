@@ -22,12 +22,22 @@ type Source interface {
 }
 
 // Meta is the metadata common to every node, independent of any filesystem.
+// Engines map these fields onto their on-disk representation, ignoring whatever
+// a given format cannot express.
 type Meta struct {
-	Mode    fs.FileMode
-	UID     uint32
-	GID     uint32
-	ModTime time.Time // zero means "resolve from the injected Clock at build time"
-	Xattrs  map[string][]byte
+	// Mode is the Go file mode: permission bits plus the type bits that select
+	// regular file / dir / symlink / device / fifo / socket.
+	Mode fs.FileMode
+	// UID and GID are the owning user and group ids.
+	UID uint32
+	GID uint32
+	// ModTime is the modification time; the zero value means "resolve from the
+	// injected Clock at build time", which is what keeps reproducible builds
+	// free of host wall-clock leakage.
+	ModTime time.Time
+	// Xattrs are extended attributes by name; nil when there are none. Engines
+	// that do not support xattrs ignore them.
+	Xattrs map[string][]byte
 }
 
 // Inode is a single filesystem object. Exactly one of Content/Link/Rdev is

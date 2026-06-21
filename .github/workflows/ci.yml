@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: vet · build · test · coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test
+        run: go test ./... -covermode=atomic -coverprofile=cover.out
+
+      - name: coverage gate
+        run: bash scripts/coverage_gate.sh
+
+  conformance:
+    name: conformance (e2fsck, unsquashfs, …)
+    runs-on: ubuntu-latest
+    # Validation against the real filesystem tools is best-effort: it must never
+    # block a merge on tool availability, so failures here are informational.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: install filesystem tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y e2fsprogs squashfs-tools dosfstools exfatprogs xorriso
+
+      - name: conformance tests
+        run: go test -tags conformance ./...

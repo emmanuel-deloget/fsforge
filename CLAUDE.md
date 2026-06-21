@@ -31,7 +31,13 @@ document explains the *why*.
 
 ## Layout (golang-standards/project-layout)
 
-- `cmd/fsforge/` — CLI, thin shell only.
+- **module root** (`package fsforge`) — the high-level facade (`Builder`,
+  `Convert`) plus reusable helpers (`EngineFor`, `PopulateFromDir`, `Graft`,
+  `ExtractToDir`). This is the published entry point: it is the *only* directory
+  that maps onto the bare import path `github.com/emmanuel-deloget/fsforge`,
+  hence the deliberate exception to keeping all code under `pkg/`. It carries no
+  format logic — it wires the `pkg/*` engines and contracts together.
+- `cmd/fsforge/` — CLI, thin shell over the root facade.
 - `pkg/{device,tree,image,alloc,compress}` — public contracts + shared impls.
 - `pkg/{ext,squashfs,…}` — engines behind `image.Filesystem`.
 - `internal/{binio,conformance}` — private helpers + privileged test harness.

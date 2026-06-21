@@ -20,8 +20,10 @@ func NewMem(size int64) *Mem {
 // Bytes exposes the backing buffer for golden-image comparisons in tests.
 func (m *Mem) Bytes() []byte { return m.data }
 
+// Size reports the device size in bytes.
 func (m *Mem) Size() int64 { return int64(len(m.data)) }
 
+// ReadAt implements io.ReaderAt, returning io.EOF on a short or past-end read.
 func (m *Mem) ReadAt(p []byte, off int64) (int, error) {
 	if off < 0 {
 		return 0, errors.New("device: negative offset")
@@ -36,6 +38,8 @@ func (m *Mem) ReadAt(p []byte, off int64) (int, error) {
 	return n, nil
 }
 
+// WriteAt implements io.WriterAt; a write that would exceed the device size is
+// rejected with io.ErrShortWrite (the device never grows).
 func (m *Mem) WriteAt(p []byte, off int64) (int, error) {
 	if off < 0 {
 		return 0, errors.New("device: negative offset")

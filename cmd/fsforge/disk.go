@@ -3,20 +3,23 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
+	fsforge "github.com/emmanuel-deloget/fsforge"
 	"github.com/emmanuel-deloget/fsforge/pkg/device"
 	"github.com/emmanuel-deloget/fsforge/pkg/image"
 	"github.com/emmanuel-deloget/fsforge/pkg/partition"
 )
 
-// disk builds a GPT disk with one or more partitions, each formatted with an
-// engine and populated from a source directory.
+// disk builds a GPT or MBR disk with one or more partitions, each formatted
+// with an engine and populated from a source directory.
 func disk(args []string) error {
 	fsSet := flag.NewFlagSet("disk", flag.ContinueOnError)
 	output := fsSet.String("output", "", "output disk image file")
 	sizeStr := fsSet.String("size", "", "total disk size, e.g. 512M, 2G")
+	scheme := fsSet.String("scheme", "gpt", "partition scheme: gpt or mbr")
 	reproducible := fsSet.Bool("reproducible", false, "deterministic output")
 	var specs partFlags
 	fsSet.Var(&specs, "part", "partition as <role>:<fstype>:<source>:<size>; repeatable. "+
@@ -28,11 +31,14 @@ func disk(args []string) error {
 		return fmt.Errorf("-output, -size and at least one -part are required")
 	}
 
-	total, err := parseSize(*sizeStr)
+	total, err := fsforge.ParseSize(*sizeStr)
 	if err != nil {
 		return err
 	}
-	deps := buildDeps(*reproducible)
+	deps := fsforge.HostDeps()
+	if *reproducible {
+		deps = fsforge.ReproducibleDeps(fsforge.SourceDateEpoch())
+	}
 
 	f, err := os.Create(*output)
 	if err != nil {
@@ -44,23 +50,19 @@ func disk(args []string) error {
 	}
 	dev := device.NewFile(f, total)
 
-	pspecs := make([]partition.Spec, len(specs))
-	for i, s := range specs {
-		pspecs[i] = partition.Spec{Type: roleGUID(s.role), Name: s.role, Size: s.size}
-	}
-	parts, err := partition.FormatGPT(dev, deps, pspecs)
+	parts, err := formatScheme(*scheme, dev, deps, specs)
 	if err != nil {
 		return err
 	}
 
-	var closers []*os.File
+	var closers []io.Closer
 	defer func() {
 		for _, c := range closers {
 			c.Close()
 		}
 	}()
 	for i, s := range specs {
-		eng, err := engineFor(s.fstype, deps, 0)
+		eng, err := fsforge.EngineFor(s.fstype, deps, 0)
 		if err != nil {
 			return err
 		}
@@ -68,8 +70,8 @@ func disk(args []string) error {
 		if err != nil {
 			return fmt.Errorf("format %s: %w", s.role, err)
 		}
-		cs, err := populate(img.Root(), s.source)
-		closers = append(closers, cs...)
+		closer, err := fsforge.PopulateFromDir(img.Root(), s.source)
+		closers = append(closers, closer)
 		if err != nil {
 			return fmt.Errorf("populate %s: %w", s.role, err)
 		}
@@ -78,8 +80,27 @@ func disk(args []string) error {
 		}
 		fmt.Printf("  partition %d (%s, %s): LBA %d-%d\n", i+1, s.role, s.fstype, parts[i].StartLBA, parts[i].EndLBA)
 	}
-	fmt.Printf("wrote GPT disk %s\n", *output)
+	fmt.Printf("wrote %s disk %s\n", *scheme, *output)
 	return nil
+}
+
+func formatScheme(scheme string, dev device.Device, deps image.Deps, specs partFlags) ([]partition.Partition, error) {
+	switch scheme {
+	case "gpt":
+		pspecs := make([]partition.Spec, len(specs))
+		for i, s := range specs {
+			pspecs[i] = partition.Spec{Type: roleGUID(s.role), Name: s.role, Size: s.size}
+		}
+		return partition.FormatGPT(dev, deps, pspecs)
+	case "mbr":
+		mspecs := make([]partition.MBRSpec, len(specs))
+		for i, s := range specs {
+			mspecs[i] = partition.MBRSpec{Type: roleMBRType(s.role), Size: s.size, Bootable: s.role == "esp"}
+		}
+		return partition.FormatMBR(dev, mspecs)
+	default:
+		return nil, fmt.Errorf("unknown scheme %q (want gpt or mbr)", scheme)
+	}
 }
 
 func roleGUID(role string) partition.Type {
@@ -90,6 +111,15 @@ func roleGUID(role string) partition.Type {
 		return partition.TypeLinuxRoot
 	default:
 		return partition.TypeLinuxData
+	}
+}
+
+func roleMBRType(role string) byte {
+	switch role {
+	case "esp", "efi":
+		return partition.MBRTypeEFI
+	default:
+		return partition.MBRTypeLinux
 	}
 }
 
@@ -109,7 +139,7 @@ func (p *partFlags) Set(v string) error {
 	}
 	var size int64
 	if s := f[3]; s != "rest" && s != "0" && s != "" {
-		n, err := parseSize(s)
+		n, err := fsforge.ParseSize(s)
 		if err != nil {
 			return err
 		}
