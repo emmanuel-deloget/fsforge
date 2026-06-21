@@ -23,10 +23,18 @@ const (
 
 var le = binary.LittleEndian
 
-// ISO is the ISO9660 + Rock Ridge engine.
+// ISO is the ISO9660 + Rock Ridge create engine, implementing image.Filesystem.
+// Rock Ridge carries POSIX names, permissions, symlinks and device nodes that
+// plain ISO9660 cannot; images are validated by xorriso. Because ISO9660 is a
+// read-only on-disk format, Open is not supported — rebuild to change an image.
+//
+// Format sizes the volume from the tree, so the backing device should be at
+// least as large as the content plus ISO overhead; the CLI trims the file to
+// the recorded volume size afterwards.
 type ISO struct{ deps image.Deps }
 
-// New returns an ISO engine wired with deps.
+// New returns an ISO engine wired with deps. A nil Clock is replaced with the
+// host system clock.
 func New(deps image.Deps) *ISO {
 	if deps.Clock == nil {
 		deps.Clock = image.SystemClock{}

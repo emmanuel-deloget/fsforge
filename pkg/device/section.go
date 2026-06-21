@@ -15,8 +15,11 @@ func NewSection(d Device, off, size int64) *Section {
 	return &Section{d: d, off: off, size: size}
 }
 
+// Size reports the window size in bytes.
 func (s *Section) Size() int64 { return s.size }
 
+// ReadAt reads at an offset relative to the window start, clamping reads that
+// would cross the window's end.
 func (s *Section) ReadAt(p []byte, off int64) (int, error) {
 	if off < 0 || off > s.size {
 		return 0, errors.New("device: section read out of range")
@@ -27,6 +30,8 @@ func (s *Section) ReadAt(p []byte, off int64) (int, error) {
 	return s.d.ReadAt(p, s.off+off)
 }
 
+// WriteAt writes at an offset relative to the window start; a write that would
+// cross the window's end is rejected.
 func (s *Section) WriteAt(p []byte, off int64) (int, error) {
 	if off < 0 || off+int64(len(p)) > s.size {
 		return 0, errors.New("device: section write out of range")

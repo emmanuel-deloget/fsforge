@@ -11,9 +11,15 @@ import (
 	"github.com/emmanuel-deloget/fsforge/pkg/tree"
 )
 
-// Squashfs is the squashfs 4.0 engine. It produces non-fragmented, gzip (by
-// default) compressed images. Being a write-once format, "mutation" means
-// rebuilding, so only Format is implemented here.
+// Squashfs is the squashfs 4.0 engine, implementing image.Filesystem. Format
+// produces non-fragmented images compressed with the configured codec (zlib by
+// default), validated against unsquashfs. Open reads an existing archive into
+// the tree so squashfs can be a conversion source — including images written by
+// mksquashfs (basic and extended inodes, fragments) — but the returned image is
+// read-only: because squashfs is write-once, mutation means rebuilding, so its
+// Finalize reports that the opened image cannot be re-finalized in place.
+//
+// Configure the codec and data block size with WithCompressor and WithBlockSize.
 type Squashfs struct {
 	deps      image.Deps
 	comp      compress.Compressor
@@ -29,7 +35,9 @@ func WithCompressor(c compress.Compressor) Option { return func(s *Squashfs) { s
 // WithBlockSize sets the data block size (power of two, default 128 KiB).
 func WithBlockSize(bs uint32) Option { return func(s *Squashfs) { s.blockSize = bs } }
 
-// New returns a squashfs engine wired with deps.
+// New returns a squashfs engine wired with deps and configured by opts. A nil
+// Clock is replaced with the host system clock; the default codec is zlib and
+// the default data block size is 128 KiB.
 func New(deps image.Deps, opts ...Option) *Squashfs {
 	if deps.Clock == nil {
 		deps.Clock = image.SystemClock{}

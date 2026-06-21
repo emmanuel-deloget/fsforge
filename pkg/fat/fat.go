@@ -14,14 +14,17 @@ import (
 
 var le = binary.LittleEndian
 
-// FAT is the FAT12/16/32 engine. The type is chosen from the volume size unless
-// forced with WithFATBits.
+// FAT is the FAT12/16/32 create engine, implementing image.Filesystem. The FAT
+// width is chosen from the volume size unless forced with WithFATBits. It
+// writes ESP/boot/data volumes (long file names with generated 8.3 aliases)
+// whose images pass fsck.fat. Being a DOS-lineage format it has no owners,
+// permissions or links. Open is not yet supported (mutation rebuilds).
 type FAT struct {
 	deps      image.Deps
 	forceBits int
 }
 
-// Option configures the engine.
+// Option configures a FAT engine; pass options to New.
 type Option func(*FAT)
 
 // WithFATBits forces the FAT type (12, 16 or 32) instead of auto-selecting by
@@ -51,7 +54,10 @@ type fatImage struct {
 	deps  image.Deps
 }
 
-// Format prepares a fresh FAT32 volume on dev.
+// Format prepares a fresh FAT volume sized to fill dev, choosing FAT12/16/32
+// from the volume size (or the width forced via WithFATBits). p.Label sets the
+// volume label, defaulting to "NO NAME". It fails if dev is too small for the
+// selected FAT width.
 func (e *FAT) Format(dev device.Device, p image.Params) (image.Image, error) {
 	geo, err := computeGeometry(dev.Size(), e.forceBits)
 	if err != nil {

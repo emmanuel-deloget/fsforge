@@ -20,6 +20,8 @@ func (b *Bitmap) get(i uint64) bool { return b.bits[i/64]&(1<<(i%64)) != 0 }
 func (b *Bitmap) mark(i uint64)     { b.bits[i/64] |= 1 << (i % 64) }
 func (b *Bitmap) unmark(i uint64)   { b.bits[i/64] &^= 1 << (i % 64) }
 
+// Alloc reserves the lowest contiguous run of n free blocks and returns its
+// start. It fails with ErrNoSpace when no such run exists, and errors on n == 0.
 func (b *Bitmap) Alloc(n uint64) (uint64, error) {
 	if n == 0 {
 		return 0, errors.New("alloc: zero-length allocation")
@@ -43,6 +45,8 @@ func (b *Bitmap) Alloc(n uint64) (uint64, error) {
 	return 0, ErrNoSpace
 }
 
+// Free releases the run of n blocks starting at start. It errors if the run
+// extends past the managed range.
 func (b *Bitmap) Free(start, n uint64) error {
 	if start+n > b.total {
 		return errors.New("alloc: free out of range")
@@ -53,6 +57,9 @@ func (b *Bitmap) Free(start, n uint64) error {
 	return nil
 }
 
+// Reserve marks the run of n blocks starting at start as used, for fixed
+// regions such as the superblock or group descriptors. It errors if the run
+// extends past the managed range.
 func (b *Bitmap) Reserve(start, n uint64) error {
 	if start+n > b.total {
 		return errors.New("alloc: reserve out of range")

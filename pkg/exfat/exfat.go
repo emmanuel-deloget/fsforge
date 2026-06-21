@@ -14,10 +14,15 @@ import (
 
 var le = binary.LittleEndian
 
-// ExFAT is the exFAT engine.
+// ExFAT is the exFAT create engine, implementing image.Filesystem. It writes
+// large/removable-media volumes whose images pass fsck.exfat. Being a
+// DOS-lineage format it carries no owners, permissions or links; symlinks are
+// rejected. See the package doc for the on-disk strategy. Open is not yet
+// supported (mutation rebuilds).
 type ExFAT struct{ deps image.Deps }
 
-// New returns an exFAT engine wired with deps.
+// New returns an exFAT engine wired with deps. Nil Clock/UUID are replaced with
+// the host system clock and random UUIDs.
 func New(deps image.Deps) *ExFAT {
 	if deps.Clock == nil {
 		deps.Clock = image.SystemClock{}
@@ -36,7 +41,9 @@ type exfatImage struct {
 	deps  image.Deps
 }
 
-// Format prepares a fresh exFAT volume on dev.
+// Format prepares a fresh exFAT volume sized to fill dev. dev must be large
+// enough for the boot region, allocation bitmap, up-case table and root
+// directory; an error is returned otherwise. p.Label sets the volume label.
 func (e *ExFAT) Format(dev device.Device, p image.Params) (image.Image, error) {
 	geo, err := computeGeometry(dev.Size())
 	if err != nil {
