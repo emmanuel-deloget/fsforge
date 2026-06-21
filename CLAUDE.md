@@ -55,8 +55,9 @@ The conformance tests validate ext images with real e2fsprogs: they use a host
 `e2fsck` if present, otherwise a container runtime (podman/docker) pulling
 e2fsprogs on demand. They skip when neither is available. squashfs is validated
 by `unsquashfs`, EROFS by `fsck.erofs` (erofs-utils), cpio by GNU `cpio`, UDF by
-`udfinfo` (udftools) and 7-Zip, cramfs by 7-Zip, and the QCOW2 container by
-`qemu-img`, each under the `conformance` build tag.
+`udfinfo` (udftools) and 7-Zip, cramfs by 7-Zip, romfs by reading back a
+`genromfs` image, and the QCOW2 container by `qemu-img`, each under the
+`conformance` build tag.
 
 ## Commit conventions
 
