@@ -4,20 +4,18 @@
 #
 # Gated packages: the root facade, every pkg/*, and internal/binio. The CLI
 # (cmd/*) is intentionally not gated, and internal/conformance only builds under
-# the 'conformance' tag, so both are excluded. pkg/oci has a lower floor because
-# its OCI tar/manifest paths are disproportionately costly to unit-test.
+# the 'conformance' tag, so both are excluded.
 #
-# Usage: scripts/coverage_gate.sh [floor] [oci_floor]
+# Usage: scripts/coverage_gate.sh [floor]
 set -euo pipefail
 
-FLOOR="${1:-75}"
-OCI_FLOOR="${2:-65}"
+FLOOR="${1:-80}"
 
 cd "$(dirname "$0")/.."
 
 mapfile -t PKGS < <(go list ./... | grep -vE '/cmd(/|$)|/internal/conformance$')
 
-echo "Coverage gate: floor ${FLOOR}% (pkg/oci ${OCI_FLOOR}%)"
+echo "Coverage gate: floor ${FLOOR}% per package"
 echo
 
 fail=0
@@ -37,8 +35,6 @@ while IFS= read -r line; do
 	pct=$(sed -E 's/.*coverage: ([0-9.]+)% of statements.*/\1/' <<<"$line")
 
 	floor="$FLOOR"
-	[[ "$pkg" == */pkg/oci ]] && floor="$OCI_FLOOR"
-
 	if awk "BEGIN{exit !($pct < $floor)}"; then
 		printf 'FAIL %s: %s%% < %s%%\n' "$pkg" "$pct" "$floor"
 		fail=1
