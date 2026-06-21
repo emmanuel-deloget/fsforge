@@ -111,11 +111,35 @@ func TestEngineForUnknown(t *testing.T) {
 	if _, err := fsforge.EngineFor("ntfs", fsforge.HostDeps(), 0); err == nil {
 		t.Fatal("EngineFor(ntfs) should fail")
 	}
-	for _, k := range []string{"ext2", "ext4", "fat", "exfat", "iso", "squashfs", "erofs", "cpio", "initramfs", "udf", "cramfs"} {
+	for _, k := range []string{"ext2", "ext4", "fat", "exfat", "iso", "squashfs", "erofs", "cpio", "initramfs", "udf", "cramfs", "romfs"} {
 		if _, err := fsforge.EngineFor(k, fsforge.HostDeps(), 0); err != nil {
 			t.Fatalf("EngineFor(%s): %v", k, err)
 		}
 	}
+}
+
+// TestBuilderRomfsRoundTrip builds a content-sized, trimmed romfs image through
+// the facade (exercising trimRomfs) and converts it back to a directory.
+func TestBuilderRomfsRoundTrip(t *testing.T) {
+	src := sampleTree(t)
+	out := filepath.Join(t.TempDir(), "fs.romfs")
+	if err := fsforge.New("romfs").Reproducible(1700000000).Label("romvol").BuildFromDir(src, out); err != nil {
+		t.Fatalf("BuildFromDir romfs: %v", err)
+	}
+	if info, err := os.Stat(out); err != nil || info.Size() == 0 {
+		t.Fatalf("romfs output missing or empty: %v", err)
+	}
+
+	back := t.TempDir()
+	if err := fsforge.Convert(
+		fsforge.Location{Kind: "romfs", Path: out},
+		fsforge.Location{Kind: "dir", Path: back},
+		fsforge.Options{},
+	); err != nil {
+		t.Fatalf("Convert romfs->dir: %v", err)
+	}
+	assertFile(t, filepath.Join(back, "hello.txt"), "hello fsforge\n")
+	assertFile(t, filepath.Join(back, "etc", "hosts"), "127.0.0.1 localhost\n")
 }
 
 // TestBuilderCramfsRoundTrip builds a content-sized, trimmed cramfs image
