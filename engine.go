@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/emmanuel-deloget/fsforge/pkg/cpio"
 	"github.com/emmanuel-deloget/fsforge/pkg/erofs"
 	"github.com/emmanuel-deloget/fsforge/pkg/exfat"
 	"github.com/emmanuel-deloget/fsforge/pkg/ext"
@@ -36,6 +37,8 @@ func EngineFor(fstype string, deps image.Deps, blockSize uint32) (image.Filesyst
 		return iso.New(deps), nil
 	case "erofs":
 		return erofs.New(deps), nil
+	case "cpio", "initramfs":
+		return cpio.New(deps), nil
 	case "squashfs":
 		var opts []squashfs.Option
 		if blockSize != 0 {
@@ -51,7 +54,7 @@ func EngineFor(fstype string, deps image.Deps, blockSize uint32) (image.Filesyst
 // trimmed afterwards (squashfs, iso) rather than from an explicit -size.
 func sizedFromContent(fstype string) bool {
 	switch fstype {
-	case "squashfs", "iso", "iso9660", "erofs":
+	case "squashfs", "iso", "iso9660", "erofs", "cpio", "initramfs":
 		return true
 	}
 	return false
@@ -97,6 +100,8 @@ func trim(fstype string, f *os.File) error {
 		return trimISO(f)
 	case "erofs":
 		return trimErofs(f)
+	case "cpio", "initramfs":
+		return trimCpio(f)
 	}
 	return nil
 }
@@ -129,6 +134,47 @@ func trimErofs(f *os.File) error {
 		return err
 	}
 	return f.Truncate(int64(binary.LittleEndian.Uint32(b)) * 4096)
+}
+
+// trimCpio shrinks the output to the archive's real length: it walks the newc
+// headers to the TRAILER!!! sentinel and rounds up to the 512-byte block the
+// writer pads to.
+func trimCpio(f *os.File) error {
+	const hdrLen = 110
+	hdr := make([]byte, hdrLen)
+	hexAt := func(b []byte, field int) (int64, error) {
+		v, err := strconv.ParseUint(string(b[6+field*8:6+field*8+8]), 16, 32)
+		return int64(v), err
+	}
+	nAlign := func(ns int64) int64 { return ((ns + 1) &^ 3) + 2 }
+	align := func(v, a int64) int64 { return (v + a - 1) &^ (a - 1) }
+
+	var pos int64
+	for {
+		if _, err := f.ReadAt(hdr, pos); err != nil {
+			return err
+		}
+		if string(hdr[:6]) != "070701" && string(hdr[:6]) != "070702" {
+			return fmt.Errorf("trimCpio: bad newc magic at %d", pos)
+		}
+		filesize, err := hexAt(hdr, 6)
+		if err != nil {
+			return err
+		}
+		namesize, err := hexAt(hdr, 11)
+		if err != nil {
+			return err
+		}
+		name := make([]byte, namesize)
+		if _, err := f.ReadAt(name, pos+hdrLen); err != nil {
+			return err
+		}
+		end := align(pos+hdrLen+nAlign(namesize)+filesize, 4)
+		if string(name[:namesize-1]) == "TRAILER!!!" {
+			return f.Truncate(align(end, 512))
+		}
+		pos = end
+	}
 }
 
 // ParseSize parses a human size such as "64M", "512m", "2G" or a plain byte

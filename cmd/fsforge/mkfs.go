@@ -9,7 +9,7 @@ import (
 
 func mkfs(args []string) error {
 	fsSet := flag.NewFlagSet("mkfs", flag.ContinueOnError)
-	typ := fsSet.String("type", "", "filesystem type: ext2, ext4, fat, exfat, iso, squashfs, erofs")
+	typ := fsSet.String("type", "", "filesystem type: ext2, ext4, fat, exfat, iso, squashfs, erofs, cpio")
 	source := fsSet.String("source", "", "source directory")
 	output := fsSet.String("output", "", "output image file")
 	sizeStr := fsSet.String("size", "", "image size (fixed-size types), e.g. 64M")

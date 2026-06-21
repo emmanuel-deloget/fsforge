@@ -95,7 +95,7 @@ Create and mutate are **one pipeline**, not two engines:
 L5  Facade          fsforge: Builder / Convert / EngineFor / Populate     (module root)
 L4  Public API      image: Image / Dir / File / Filesystem / Deps         (pkg/image)
 L3  Logical model   tree:  Inode / Dirent / Meta / Source                 (pkg/tree)
-L2  Engines         ext2/3/4, squashfs, erofs, exfat, fat, iso9660, oci   (pkg/<fs>)
+L2  Engines         ext2/3/4, squashfs, erofs, exfat, fat, iso9660, cpio, oci  (pkg/<fs>)
 L1  Container       MBR / GPT partition tables                            (pkg/partition)
 L0  Block backend   device: Device / Discarder, Mem / File / Section      (pkg/device)
         ┌── policy injected into engines ──┐
@@ -108,10 +108,10 @@ The facade (L5) sits above everything and only *wires* the lower layers; it
 holds no format logic.
 
 Each engine implements `image.Filesystem` and is a **write target**. The current
-engines are ext2/3/4, squashfs, EROFS, FAT12/16/32, exFAT and ISO9660 + Rock
-Ridge, with OCI image read/write bridged through the same tree. Engines that can
-also *load* an existing image (ext, squashfs, EROFS, exFAT, ISO9660, OCI) double
-as conversion sources.
+engines are ext2/3/4, squashfs, EROFS, FAT12/16/32, exFAT, ISO9660 + Rock Ridge
+and cpio (newc), with OCI image read/write bridged through the same tree.
+Engines that can also *load* an existing image (ext, squashfs, EROFS, exFAT,
+ISO9660, cpio, OCI) double as conversion sources.
 
 EROFS, like squashfs, is read-only once mounted but is nonetheless a *write
 target* in fsforge's sense: the engine produces the image. It writes an
@@ -119,6 +119,15 @@ uncompressed variant (4 KiB blocks, 64-byte extended inodes, FLAT_PLAIN data)
 that `fsck.erofs` and the kernel accept; its reader additionally understands the
 compact inodes and inline tails a default `mkfs.erofs` emits, so a tool-written
 image opens as a conversion source.
+
+The cpio engine targets the "newc" format the Linux kernel unpacks as an
+initramfs. A cpio archive is a stream rather than a block device, but it rides
+the same `image.Filesystem` contract: `Finalize` streams headers, names and
+bodies (4-byte aligned, ending with the `TRAILER!!!` sentinel) sequentially to
+the device, and `Open` parses one back, folding hard-linked regular files onto a
+shared node. The output is a ready-to-boot uncompressed initramfs; outer
+gzip/xz wrapping, when wanted, is applied around the archive, not inside the
+engine. It is validated against GNU `cpio`.
 
 ## 7. Project layout
 
@@ -139,6 +148,7 @@ because that is the only directory mapping onto the bare published import path
 | `pkg/ext/`               | ext2/3/4 engine.                                                 |
 | `pkg/squashfs/`          | squashfs engine (writer + reader).                              |
 | `pkg/erofs/`             | EROFS engine (uncompressed writer + reader).                    |
+| `pkg/cpio/`              | cpio newc engine (initramfs archive writer + reader).           |
 | `pkg/fat/`               | FAT12/16/32 engine (ESP/boot/data volumes).                     |
 | `pkg/exfat/`             | exFAT engine (large/removable volumes).                          |
 | `pkg/iso/`               | ISO9660 + Rock Ridge engine (CD/DVD images).                    |
@@ -173,6 +183,7 @@ The shape (see the module root, `pkg/image`, `pkg/tree`, `pkg/alloc`):
 - ext4 disk layout — kernel docs `Documentation/filesystems/ext4/`.
 - squashfs format — kernel docs / `squashfs-tools`.
 - EROFS on-disk format — kernel `fs/erofs/erofs_fs.h` / `erofs-utils`.
+- cpio newc format — kernel `init/initramfs.c`, `usr/gen_init_cpio.c`, GNU cpio.
 - exFAT specification — Microsoft (opened, 2019).
 - ISO9660 / ECMA-119 and the Rock Ridge / SUSP extensions.
 - OCI Image Format Specification.
