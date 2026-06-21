@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/emmanuel-deloget/fsforge/pkg/cpio"
+	"github.com/emmanuel-deloget/fsforge/pkg/cramfs"
 	"github.com/emmanuel-deloget/fsforge/pkg/erofs"
 	"github.com/emmanuel-deloget/fsforge/pkg/exfat"
 	"github.com/emmanuel-deloget/fsforge/pkg/ext"
@@ -42,6 +43,8 @@ func EngineFor(fstype string, deps image.Deps, blockSize uint32) (image.Filesyst
 		return cpio.New(deps), nil
 	case "udf":
 		return udf.New(deps), nil
+	case "cramfs":
+		return cramfs.New(deps), nil
 	case "squashfs":
 		var opts []squashfs.Option
 		if blockSize != 0 {
@@ -57,7 +60,7 @@ func EngineFor(fstype string, deps image.Deps, blockSize uint32) (image.Filesyst
 // trimmed afterwards (squashfs, iso) rather than from an explicit -size.
 func sizedFromContent(fstype string) bool {
 	switch fstype {
-	case "squashfs", "iso", "iso9660", "erofs", "cpio", "initramfs", "udf":
+	case "squashfs", "iso", "iso9660", "erofs", "cpio", "initramfs", "udf", "cramfs":
 		return true
 	}
 	return false
@@ -107,6 +110,8 @@ func trim(fstype string, f *os.File) error {
 		return trimCpio(f)
 	case "udf":
 		return trimUDF(f)
+	case "cramfs":
+		return trimCramfs(f)
 	}
 	return nil
 }
@@ -139,6 +144,16 @@ func trimErofs(f *os.File) error {
 		return err
 	}
 	return f.Truncate(int64(binary.LittleEndian.Uint32(b)) * 4096)
+}
+
+// trimCramfs shrinks the output to the image length recorded in the cramfs
+// superblock (the u32 `size` field at offset 4).
+func trimCramfs(f *os.File) error {
+	b := make([]byte, 4)
+	if _, err := f.ReadAt(b, 4); err != nil {
+		return err
+	}
+	return f.Truncate(int64(binary.LittleEndian.Uint32(b)))
 }
 
 // trimUDF shrinks the output to the blocks the engine used. The Partition

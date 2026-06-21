@@ -25,6 +25,7 @@ back to convert or mutate).
 | EROFS             | ✅     | ✅                    | `fsck.erofs`       |
 | cpio newc (initramfs) | ✅ | ✅                    | `cpio`             |
 | UDF 2.01          | ✅     | ✅                    | kernel mount, `udfinfo`, `7z` |
+| cramfs            | ✅     | ✅                    | `7z`               |
 | FAT12 / 16 / 32   | ✅     | —                     | `fsck.fat`         |
 | exFAT             | ✅     | ✅                    | `fsck.exfat`       |
 | ISO9660 + Rock Ridge | ✅  | ✅                    | `xorriso`          |

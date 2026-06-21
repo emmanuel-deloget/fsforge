@@ -39,7 +39,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `fsforge — pure-Go filesystem image builder
 
 usage:
-  fsforge mkfs -type <ext2|ext4|fat|exfat|iso|squashfs|erofs|cpio|udf> -source <dir> -output <file> [options]
+  fsforge mkfs -type <ext2|ext4|fat|exfat|iso|squashfs|erofs|cpio|udf|cramfs> -source <dir> -output <file> [options]
   fsforge convert -from <kind>:<path> -to <kind>:<path> [options]
   fsforge disk -output <file> -size <size> -part <role>:<fstype>:<source>:<size> ...
   fsforge oci-add-layer -image <oci-dir> -from <dir|kind:path> [-ref <tag>] [-diff]
@@ -53,9 +53,9 @@ mkfs options:
   -label        volume label
   -reproducible deterministic output (fixed timestamps and UUID)
 
-convert: <kind> is dir, ext2, ext4, squashfs, exfat, iso, erofs, cpio, udf or oci.
-  -from <kind>:<path>   source  (dir, ext2, ext4, squashfs, exfat, iso, erofs, cpio, udf, oci)
-  -to   <kind>:<path>   sink    (dir, ext2, ext4, squashfs, exfat, iso, erofs, cpio, udf, oci)
+convert: <kind> is dir, ext2, ext4, squashfs, exfat, iso, erofs, cpio, udf, cramfs or oci.
+  -from <kind>:<path>   source  (dir, ext2, ext4, squashfs, exfat, iso, erofs, cpio, udf, cramfs, oci)
+  -to   <kind>:<path>   sink    (dir, ext2, ext4, squashfs, exfat, iso, erofs, cpio, udf, cramfs, oci)
   -size, -block-size    as for mkfs (ext sinks need -size)
   -ref                  image ref for an oci sink (default fsforge:latest)
   -reproducible         deterministic output
