@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/emmanuel-deloget/fsforge/pkg/cpio"
+	"github.com/emmanuel-deloget/fsforge/pkg/cramfs"
 	"github.com/emmanuel-deloget/fsforge/pkg/erofs"
 	"github.com/emmanuel-deloget/fsforge/pkg/exfat"
 	"github.com/emmanuel-deloget/fsforge/pkg/ext"
@@ -100,6 +101,9 @@ func loadTree(kind, path string, deps image.Deps) (*image.Node, *oci.Image, func
 	case "udf":
 		return openImage(path, udf.New(deps))
 
+	case "cramfs":
+		return openImage(path, cramfs.New(deps))
+
 	case "oci":
 		l, err := oci.OpenLayout(path)
 		if err != nil {
@@ -144,7 +148,7 @@ func writeTree(root *image.Node, to Location, cfg *oci.Image, opt Options) error
 	case "dir":
 		return ExtractToDir(root, to.Path)
 
-	case "ext2", "ext4", "squashfs", "fat", "fat32", "exfat", "iso", "iso9660", "erofs", "cpio", "initramfs", "udf":
+	case "ext2", "ext4", "squashfs", "fat", "fat32", "exfat", "iso", "iso9660", "erofs", "cpio", "initramfs", "udf", "cramfs":
 		b := &Builder{fstype: to.Kind, deps: opt.Deps, size: opt.Size, blockSize: opt.BlockSize}
 		return b.BuildFromTree(root, to.Path)
 
