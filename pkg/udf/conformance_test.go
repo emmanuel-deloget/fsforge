@@ -77,7 +77,7 @@ func TestUdf7zExtract(t *testing.T) {
 	trimmed(t, dev, img)
 
 	out := filepath.Join(tmp, "extracted")
-	combined, err := conformance.Udf7zExtract(img, out)
+	combined, err := conformance.SevenZipExtract(img, out)
 	if errors.Is(err, conformance.ErrUnavailable) {
 		t.Skip("7z unavailable (no host binary or container runtime)")
 	}
