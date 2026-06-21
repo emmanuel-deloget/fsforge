@@ -7,7 +7,10 @@
 // with overlay/whiteout semantics. The package therefore exposes two halves:
 //
 //   - Build: a tree (built with the same image.Dir API as ext/squashfs) becomes
-//     a tar layer plus config/manifest/index blobs in an OCI layout.
+//     a single-layer image — a tar layer plus config/manifest/index blobs.
+//   - AddLayer: stacks another tree as an additional layer on top of an existing
+//     image, updating its config and manifest. The layer is additive (a union
+//     over the lower layers, no deletions).
 //   - Flatten: an existing layout's layers are applied in order into one tree,
 //     which can then be serialised to ext4, squashfs, or back to OCI.
 //

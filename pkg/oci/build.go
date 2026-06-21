@@ -45,6 +45,14 @@ func Build(dst *Layout, img *image.Mem, opt BuildOptions) (Descriptor, error) {
 		RootFS:       RootFS{Type: "layers", DiffIDs: []string{diffID}},
 		History:      []History{{Created: createdStr, CreatedBy: "fsforge"}},
 	}
+	return writeImageMeta(dst, []Descriptor{layerDesc}, cfg, opt.Ref)
+}
+
+// writeImageMeta stores the config blob, the manifest that ties it to the
+// ordered layers, and the index tagged ref. It returns the manifest descriptor.
+// Build and AddLayer share it so the two paths assemble image metadata
+// identically.
+func writeImageMeta(dst *Layout, layers []Descriptor, cfg Image, ref string) (Descriptor, error) {
 	cfgBytes, err := marshalJSON(cfg)
 	if err != nil {
 		return Descriptor{}, err
@@ -58,7 +66,7 @@ func Build(dst *Layout, img *image.Mem, opt BuildOptions) (Descriptor, error) {
 		SchemaVersion: 2,
 		MediaType:     MediaTypeManifest,
 		Config:        cfgDesc,
-		Layers:        []Descriptor{layerDesc},
+		Layers:        layers,
 	}
 	manBytes, err := marshalJSON(manifest)
 	if err != nil {
@@ -68,9 +76,9 @@ func Build(dst *Layout, img *image.Mem, opt BuildOptions) (Descriptor, error) {
 	if err != nil {
 		return Descriptor{}, err
 	}
-	manDesc.Platform = &Platform{Architecture: opt.Architecture, OS: opt.OS}
+	manDesc.Platform = &Platform{Architecture: cfg.Architecture, OS: cfg.OS}
 
-	if err := dst.WriteIndex(manDesc, opt.Ref); err != nil {
+	if err := dst.WriteIndex(manDesc, ref); err != nil {
 		return Descriptor{}, err
 	}
 	return manDesc, nil
