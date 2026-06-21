@@ -111,11 +111,36 @@ func TestEngineForUnknown(t *testing.T) {
 	if _, err := fsforge.EngineFor("ntfs", fsforge.HostDeps(), 0); err == nil {
 		t.Fatal("EngineFor(ntfs) should fail")
 	}
-	for _, k := range []string{"ext2", "ext4", "fat", "exfat", "iso", "squashfs", "erofs", "cpio", "initramfs"} {
+	for _, k := range []string{"ext2", "ext4", "fat", "exfat", "iso", "squashfs", "erofs", "cpio", "initramfs", "udf"} {
 		if _, err := fsforge.EngineFor(k, fsforge.HostDeps(), 0); err != nil {
 			t.Fatalf("EngineFor(%s): %v", k, err)
 		}
 	}
+}
+
+// TestBuilderUDFRoundTrip builds a content-sized, trimmed UDF image through the
+// facade (exercising trimUDF) and converts it back to a directory.
+func TestBuilderUDFRoundTrip(t *testing.T) {
+	src := sampleTree(t)
+	out := filepath.Join(t.TempDir(), "vol.udf")
+	if err := fsforge.New("udf").Reproducible(1700000000).Label("FSFORGE").BuildFromDir(src, out); err != nil {
+		t.Fatalf("BuildFromDir udf: %v", err)
+	}
+	info, err := os.Stat(out)
+	if err != nil || info.Size() == 0 || info.Size()%2048 != 0 {
+		t.Fatalf("udf output missing or not block-aligned: size=%d err=%v", info.Size(), err)
+	}
+
+	back := t.TempDir()
+	if err := fsforge.Convert(
+		fsforge.Location{Kind: "udf", Path: out},
+		fsforge.Location{Kind: "dir", Path: back},
+		fsforge.Options{},
+	); err != nil {
+		t.Fatalf("Convert udf->dir: %v", err)
+	}
+	assertFile(t, filepath.Join(back, "hello.txt"), "hello fsforge\n")
+	assertFile(t, filepath.Join(back, "etc", "hosts"), "127.0.0.1 localhost\n")
 }
 
 // TestBuilderQcow2RoundTrip builds an ext4 filesystem inside a QCOW2 container
