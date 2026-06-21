@@ -17,6 +17,7 @@ import (
 	"github.com/emmanuel-deloget/fsforge/pkg/image"
 	"github.com/emmanuel-deloget/fsforge/pkg/iso"
 	"github.com/emmanuel-deloget/fsforge/pkg/squashfs"
+	"github.com/emmanuel-deloget/fsforge/pkg/udf"
 )
 
 // EngineFor returns the image.Filesystem engine for a filesystem type name,
@@ -39,6 +40,8 @@ func EngineFor(fstype string, deps image.Deps, blockSize uint32) (image.Filesyst
 		return erofs.New(deps), nil
 	case "cpio", "initramfs":
 		return cpio.New(deps), nil
+	case "udf":
+		return udf.New(deps), nil
 	case "squashfs":
 		var opts []squashfs.Option
 		if blockSize != 0 {
@@ -54,7 +57,7 @@ func EngineFor(fstype string, deps image.Deps, blockSize uint32) (image.Filesyst
 // trimmed afterwards (squashfs, iso) rather than from an explicit -size.
 func sizedFromContent(fstype string) bool {
 	switch fstype {
-	case "squashfs", "iso", "iso9660", "erofs", "cpio", "initramfs":
+	case "squashfs", "iso", "iso9660", "erofs", "cpio", "initramfs", "udf":
 		return true
 	}
 	return false
@@ -102,6 +105,8 @@ func trim(fstype string, f *os.File) error {
 		return trimErofs(f)
 	case "cpio", "initramfs":
 		return trimCpio(f)
+	case "udf":
+		return trimUDF(f)
 	}
 	return nil
 }
@@ -134,6 +139,21 @@ func trimErofs(f *os.File) error {
 		return err
 	}
 	return f.Truncate(int64(binary.LittleEndian.Uint32(b)) * 4096)
+}
+
+// trimUDF shrinks the output to the blocks the engine used. The Partition
+// Descriptor at block 22 records the partition's starting location and length
+// (u32 at byte offsets 188 and 192); the image ends one block past the
+// partition, at the second anchor.
+func trimUDF(f *os.File) error {
+	const pdOff = 22 * 2048
+	b := make([]byte, 8)
+	if _, err := f.ReadAt(b, pdOff+188); err != nil {
+		return err
+	}
+	start := binary.LittleEndian.Uint32(b[0:])
+	length := binary.LittleEndian.Uint32(b[4:])
+	return f.Truncate(int64(start+length+1) * 2048)
 }
 
 // trimCpio shrinks the output to the archive's real length: it walks the newc

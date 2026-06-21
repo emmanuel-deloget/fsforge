@@ -14,6 +14,7 @@ import (
 	"github.com/emmanuel-deloget/fsforge/pkg/oci"
 	"github.com/emmanuel-deloget/fsforge/pkg/squashfs"
 	"github.com/emmanuel-deloget/fsforge/pkg/tree"
+	"github.com/emmanuel-deloget/fsforge/pkg/udf"
 )
 
 // Location names one end of a conversion: a Kind (dir, ext2, ext4, squashfs,
@@ -96,6 +97,9 @@ func loadTree(kind, path string, deps image.Deps) (*image.Node, *oci.Image, func
 	case "cpio", "initramfs":
 		return openImage(path, cpio.New(deps))
 
+	case "udf":
+		return openImage(path, udf.New(deps))
+
 	case "oci":
 		l, err := oci.OpenLayout(path)
 		if err != nil {
@@ -140,7 +144,7 @@ func writeTree(root *image.Node, to Location, cfg *oci.Image, opt Options) error
 	case "dir":
 		return ExtractToDir(root, to.Path)
 
-	case "ext2", "ext4", "squashfs", "fat", "fat32", "exfat", "iso", "iso9660", "erofs", "cpio", "initramfs":
+	case "ext2", "ext4", "squashfs", "fat", "fat32", "exfat", "iso", "iso9660", "erofs", "cpio", "initramfs", "udf":
 		b := &Builder{fstype: to.Kind, deps: opt.Deps, size: opt.Size, blockSize: opt.BlockSize}
 		return b.BuildFromTree(root, to.Path)
 
