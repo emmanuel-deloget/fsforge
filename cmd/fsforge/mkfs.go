@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/emmanuel-deloget/fsforge/pkg/device"
+	"github.com/emmanuel-deloget/fsforge/pkg/exfat"
 	"github.com/emmanuel-deloget/fsforge/pkg/ext"
 	"github.com/emmanuel-deloget/fsforge/pkg/fat"
 	"github.com/emmanuel-deloget/fsforge/pkg/image"
@@ -114,6 +115,8 @@ func engineFor(typ string, deps image.Deps, blockSize uint32) (image.Filesystem,
 		return ext.NewExt4(deps), nil
 	case "fat", "fat32":
 		return fat.New(deps), nil
+	case "exfat":
+		return exfat.New(deps), nil
 	case "iso", "iso9660":
 		return iso.New(deps), nil
 	case "squashfs":

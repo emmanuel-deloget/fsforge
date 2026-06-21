@@ -117,7 +117,8 @@ Follows the conventions of `golang-standards/project-layout`.
 | `pkg/compress/`          | `Compressor` interface, registry, pure-Go codec adapters.        |
 | `pkg/ext/`               | ext2/3/4 engine.                                                  |
 | `pkg/squashfs/`          | squashfs engine.                                                  |
-| `pkg/fat/`               | FAT32 engine (ESP/boot/data volumes).                             |
+| `pkg/fat/`               | FAT12/16/32 engine (ESP/boot/data volumes).                       |
+| `pkg/exfat/`             | exFAT engine (large/removable volumes).                           |
 | `pkg/iso/`               | ISO9660 + Rock Ridge engine (CD/DVD images).                      |
 | `pkg/partition/`         | GPT partition tables; carves a disk into device.Sections.         |
 | `pkg/oci/`               | OCI image read (flatten) and write (build); tree as the hub.      |
@@ -179,8 +180,8 @@ that ext2 validates the whole architecture before ext4's complexity.
 | **M6b**   | ✅ done | **ISO9660 + Rock Ridge** create (POSIX names/perms, symlinks, devices; single-extent files), validated by `xorriso` extract. `oci→iso` of real alpine round-trips. Wired into mkfs and convert. |
 | **MBR**   | ✅ done | MBR partition tables (up to 4 primaries, bootable flag), validated by sfdisk; `disk -scheme mbr`. |
 | sqfs read | ✅ done | **squashfs reader** (basic + extended inodes, fragments, zlib) makes squashfs a convert source; reads real `mksquashfs` output (`squashfs→ext4` e2fsck-clean, `squashfs→dir` byte-identical). |
-| **M5**    | todo   | **exFAT** create + mutate.                                     |
-| **M6c**   | todo   | ISO9660 deep-relocation/CE for very long names; MBR/GPT hybrid. |
+| **M5**    | ✅ done | **exFAT** create (allocation bitmap, ASCII up-case table, FAT-chained bitmap/upcase/root + NoFatChain files, entry sets with name hash + set checksum, boot checksum), validated by `fsck.exfat`. Wired into mkfs and convert. |
+| **M6c**   | todo   | exFAT offline mutation; ISO9660 deep-relocation/CE for very long names. |
 | later     | todo   | **erofs** / **UDF** if demand warrants. NTFS/btrfs/ZFS: out of scope until a correct *writer* is realistic. |
 
 > Conformance: ext2 and ext4 images pass `e2fsck -fn` cleanly (e2fsprogs 1.47.4),

@@ -156,7 +156,7 @@ func writeTree(root *image.Node, w writeParams) error {
 	case "dir":
 		return extractDir(root, w.path)
 
-	case "ext2", "ext4", "squashfs", "fat", "fat32", "iso", "iso9660":
+	case "ext2", "ext4", "squashfs", "fat", "fat32", "exfat", "iso", "iso9660":
 		eng, err := engineFor(w.kind, w.deps, w.blockSize)
 		if err != nil {
 			return err
