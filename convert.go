@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/emmanuel-deloget/fsforge/pkg/cpio"
-	"github.com/emmanuel-deloget/fsforge/pkg/device"
 	"github.com/emmanuel-deloget/fsforge/pkg/erofs"
 	"github.com/emmanuel-deloget/fsforge/pkg/exfat"
 	"github.com/emmanuel-deloget/fsforge/pkg/ext"
@@ -113,19 +112,21 @@ func loadTree(kind, path string, deps image.Deps) (*image.Node, *oci.Image, func
 	}
 }
 
-// openImage opens an on-disk image with eng and returns its tree root.
+// openImage opens an on-disk image with eng and returns its tree root. A QCOW2
+// container is decoded transparently, so a filesystem stored inside one opens
+// like a raw image.
 func openImage(path string, eng image.Filesystem) (*image.Node, *oci.Image, func(), error) {
 	noop := func() {}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, nil, noop, err
 	}
-	info, err := f.Stat()
+	dev, err := inputDevice(f)
 	if err != nil {
 		f.Close()
 		return nil, nil, noop, err
 	}
-	img, err := eng.Open(device.NewFile(f, info.Size()))
+	img, err := eng.Open(dev)
 	if err != nil {
 		f.Close()
 		return nil, nil, noop, err

@@ -3,7 +3,6 @@ package fsforge
 import (
 	"os"
 
-	"github.com/emmanuel-deloget/fsforge/pkg/device"
 	"github.com/emmanuel-deloget/fsforge/pkg/image"
 )
 
@@ -111,11 +110,13 @@ func (b *Builder) build(outPath string, contentBytes int64, fill func(image.Dir)
 		return err
 	}
 	defer f.Close()
-	if err := f.Truncate(size); err != nil {
+
+	dev, finalize, err := outputBackend(b.fstype, outPath, f, size)
+	if err != nil {
 		return err
 	}
 
-	img, err := eng.Format(device.NewFile(f, size), image.Params{Label: b.label, BlockSize: b.blockSize})
+	img, err := eng.Format(dev, image.Params{Label: b.label, BlockSize: b.blockSize})
 	if err != nil {
 		return err
 	}
@@ -127,5 +128,5 @@ func (b *Builder) build(outPath string, contentBytes int64, fill func(image.Dir)
 	if err := img.Finalize(); err != nil {
 		return err
 	}
-	return trim(b.fstype, f)
+	return finalize()
 }

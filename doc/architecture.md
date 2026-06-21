@@ -96,7 +96,7 @@ L5  Facade          fsforge: Builder / Convert / EngineFor / Populate     (modul
 L4  Public API      image: Image / Dir / File / Filesystem / Deps         (pkg/image)
 L3  Logical model   tree:  Inode / Dirent / Meta / Source                 (pkg/tree)
 L2  Engines         ext2/3/4, squashfs, erofs, exfat, fat, iso9660, cpio, oci  (pkg/<fs>)
-L1  Container       MBR / GPT partition tables                            (pkg/partition)
+L1  Container       MBR / GPT partition tables  ·  qcow2 (disk image)     (pkg/partition, pkg/qcow2)
 L0  Block backend   device: Device / Discarder, Mem / File / Section      (pkg/device)
         ┌── policy injected into engines ──┐
         alloc (allocation)  ·  compress (codecs)  ·  image.Clock/UUID (env)
@@ -129,6 +129,29 @@ shared node. The output is a ready-to-boot uncompressed initramfs; outer
 gzip/xz wrapping, when wanted, is applied around the archive, not inside the
 engine. It is validated against GNU `cpio`.
 
+### 6.1 QCOW2 — a container at the device layer
+
+QCOW2 is not a filesystem and is not an engine: it is a *disk-image container*,
+so it lives at L0/L1 rather than L2. `pkg/qcow2` is a `device.Device` whose
+virtual address space is the guest disk, backed by a host file that allocates a
+cluster only when a region is actually written. This is exactly where the raw
+output file sits today, so QCOW2 slots in *below* partitions and engines: the
+same GPT/MBR tables and the same engines write to it unchanged.
+
+- **Writing** (`qcow2.Writer`): data clusters stream to the host file as they
+  are written; the L1/L2 mapping and refcounts are kept in memory — bounded by
+  the *allocated* size, never the whole image — and flushed by `Finalize`. An
+  all-zero, not-yet-allocated cluster is skipped, so output is naturally sparse.
+- **Reading** (`qcow2.Reader`): presents an existing image as a read-only
+  device by mapping guest offsets through L1/L2 to host clusters.
+
+The facade selects QCOW2 by output extension (`.qcow2`/`.qcow`) — wrapping the
+output device for `mkfs`, `convert` sinks and `fsforge disk` alike — and detects
+the QCOW2 magic on input to decode a container transparently, so any engine can
+`Open` a filesystem stored inside one. The driving pairing is `fsforge disk
+-output vm.qcow2`: a partitioned, ready-to-boot VM disk. It is validated with
+`qemu-img check` and round-tripped through `qemu-img convert`.
+
 ## 7. Project layout
 
 Follows the conventions of `golang-standards/project-layout`, with one
@@ -149,6 +172,7 @@ because that is the only directory mapping onto the bare published import path
 | `pkg/squashfs/`          | squashfs engine (writer + reader).                              |
 | `pkg/erofs/`             | EROFS engine (uncompressed writer + reader).                    |
 | `pkg/cpio/`              | cpio newc engine (initramfs archive writer + reader).           |
+| `pkg/qcow2/`             | QCOW2 disk-image container as a device (writer + reader).        |
 | `pkg/fat/`               | FAT12/16/32 engine (ESP/boot/data volumes).                     |
 | `pkg/exfat/`             | exFAT engine (large/removable volumes).                          |
 | `pkg/iso/`               | ISO9660 + Rock Ridge engine (CD/DVD images).                    |
@@ -184,6 +208,7 @@ The shape (see the module root, `pkg/image`, `pkg/tree`, `pkg/alloc`):
 - squashfs format — kernel docs / `squashfs-tools`.
 - EROFS on-disk format — kernel `fs/erofs/erofs_fs.h` / `erofs-utils`.
 - cpio newc format — kernel `init/initramfs.c`, `usr/gen_init_cpio.c`, GNU cpio.
+- QCOW2 format — QEMU `docs/interop/qcow2.txt`; validated with `qemu-img`.
 - exFAT specification — Microsoft (opened, 2019).
 - ISO9660 / ECMA-119 and the Rock Ridge / SUSP extensions.
 - OCI Image Format Specification.

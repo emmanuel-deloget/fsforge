@@ -54,8 +54,8 @@ go test -tags conformance ./pkg/ext/   # runs e2fsck (host binary or container)
 The conformance tests validate ext images with real e2fsprogs: they use a host
 `e2fsck` if present, otherwise a container runtime (podman/docker) pulling
 e2fsprogs on demand. They skip when neither is available. squashfs is validated
-by `unsquashfs`, EROFS by `fsck.erofs` (erofs-utils), and cpio by GNU `cpio`,
-each under the `conformance` build tag.
+by `unsquashfs`, EROFS by `fsck.erofs` (erofs-utils), cpio by GNU `cpio`, and the
+QCOW2 container by `qemu-img`, each under the `conformance` build tag.
 
 ## Commit conventions
 
