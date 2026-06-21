@@ -23,10 +23,11 @@ const (
 
 var le = binary.LittleEndian
 
-// ISO is the ISO9660 + Rock Ridge create engine, implementing image.Filesystem.
-// Rock Ridge carries POSIX names, permissions, symlinks and device nodes that
-// plain ISO9660 cannot; images are validated by xorriso. Because ISO9660 is a
-// read-only on-disk format, Open is not supported — rebuild to change an image.
+// ISO is the ISO9660 + Rock Ridge engine, implementing image.Filesystem. Rock
+// Ridge carries POSIX names, permissions, symlinks and device nodes that plain
+// ISO9660 cannot; images are validated by xorriso. Open parses an existing
+// image back into the tree (recovering the Rock Ridge metadata) so ISO can be a
+// conversion source, but the opened image is read-only — rebuild to change it.
 //
 // Format sizes the volume from the tree, so the backing device should be at
 // least as large as the content plus ISO overhead; the CLI trims the file to
@@ -57,11 +58,6 @@ func (e *ISO) Format(dev device.Device, p image.Params) (image.Image, error) {
 	}
 	mem := image.NewMem(e.deps, tree.Meta{Mode: fs.ModeDir | 0o755})
 	return &isoImage{Mem: mem, dev: dev, label: label, deps: e.deps}, nil
-}
-
-// Open is not supported: ISO9660 is read-only on disk; rebuild instead.
-func (e *ISO) Open(device.Device) (image.Image, error) {
-	return nil, errors.New("iso: Open not supported; rebuild instead")
 }
 
 // dirNode is the layout bookkeeping for one directory.

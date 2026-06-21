@@ -23,8 +23,8 @@ back to convert or mutate).
 | ext2 / ext3 / ext4| ✅     | ✅                    | `e2fsck`           |
 | squashfs          | ✅     | ✅                    | `unsquashfs`       |
 | FAT12 / 16 / 32   | ✅     | —                     | `fsck.fat`         |
-| exFAT             | ✅     | —                     | `fsck.exfat`       |
-| ISO9660 + Rock Ridge | ✅  | —                     | `xorriso`          |
+| exFAT             | ✅     | ✅                    | `fsck.exfat`       |
+| ISO9660 + Rock Ridge | ✅  | ✅                    | `xorriso`          |
 | OCI image layout  | ✅     | ✅ (flatten)          | `podman`           |
 | GPT / MBR disks   | ✅     | —                     | `sfdisk` + per-part `fsck` |
 
@@ -95,6 +95,9 @@ fsforge convert -from oci:./alpine-oci -to squashfs:rootfs.sqfs
 # Build a bootable GPT disk: an ESP (FAT32) plus an ext4 root.
 fsforge disk -output disk.img -size 512M \
   -part esp:fat:./esp:64M -part root:ext4:./rootfs:rest
+
+# Stack another layer onto an existing OCI image (additive, or -diff for a delta).
+fsforge oci-add-layer -image ./image-oci -ref app:v1 -from ./patch
 
 # Reproducible output: fixed timestamps and UUID.
 SOURCE_DATE_EPOCH=0 fsforge mkfs -type ext4 -source ./rootfs \

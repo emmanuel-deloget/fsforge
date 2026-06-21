@@ -14,11 +14,19 @@ import (
 	"github.com/emmanuel-deloget/fsforge/pkg/image"
 )
 
-// writeLayer serialises the tree rooted at root into a tar layer blob in l,
-// optionally gzip-compressed. It returns the stored (compressed) blob's
+// writeLayer serialises the whole tree rooted at root into a tar layer blob in
+// l, optionally gzip-compressed. It returns the stored (compressed) blob's
 // descriptor and the diffID (sha256 of the uncompressed tar), both needed by
 // the manifest and config respectively. Contents are streamed, never buffered.
 func writeLayer(l *Layout, root *image.Node, useGzip bool) (Descriptor, string, error) {
+	return streamLayer(l, useGzip, func(tw *tar.Writer) error { return tarTree(tw, root) })
+}
+
+// streamLayer writes a tar layer whose entries are produced by fill, hashing the
+// uncompressed tar to derive the diffID while optionally gzip-compressing the
+// stored blob. It is the shared core of writeLayer (a full tree) and
+// writeDiffLayer (a delta against a lower state).
+func streamLayer(l *Layout, useGzip bool, fill func(*tar.Writer) error) (Descriptor, string, error) {
 	var diff hash.Hash
 	desc, err := l.PutBlobStream(layerMediaType(useGzip), func(w io.Writer) error {
 		diff = sha256.New()
@@ -29,7 +37,7 @@ func writeLayer(l *Layout, root *image.Node, useGzip bool) (Descriptor, string, 
 			tarDst = gz
 		}
 		tw := tar.NewWriter(io.MultiWriter(tarDst, diff))
-		if err := tarTree(tw, root); err != nil {
+		if err := fill(tw); err != nil {
 			return err
 		}
 		if err := tw.Close(); err != nil {

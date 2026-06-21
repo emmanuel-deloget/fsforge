@@ -8,12 +8,6 @@ import (
 	"github.com/emmanuel-deloget/fsforge/pkg/tree"
 )
 
-func TestOpenUnsupported(t *testing.T) {
-	if _, err := New(testDeps()).Open(device.NewMem(1 << 20)); err == nil {
-		t.Fatal("exFAT Open should report it is unsupported")
-	}
-}
-
 func TestNewNilDeps(t *testing.T) {
 	// New must default nil Clock/UUID without panicking, and Format must work.
 	e := New(image.Deps{})

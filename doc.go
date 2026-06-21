@@ -17,6 +17,9 @@
 //		fsforge.Options{Size: "256M"},
 //	)
 //
+// AddOCILayer stacks another source as a new layer on an existing OCI image,
+// either additively or as a delta (with whiteouts for removed paths).
+//
 // For finer control, the same building blocks are exported individually:
 // EngineFor selects an engine, PopulateFromDir / Graft fill an image tree, and
 // ExtractToDir writes a tree back to a host directory. HostDeps and
