@@ -18,6 +18,13 @@ import (
 func TestExt2Conformance(t *testing.T) { runE2fsck(t, NewExt2(testDeps()), 16<<20, false) }
 func TestExt4Conformance(t *testing.T) { runE2fsck(t, NewExt4(testDeps()), 64<<20, false) }
 
+// Regression for issue #12: a 4 KiB-block ext4 of 65792 blocks leaves a runt
+// final group whose inode table overruns the group; e2fsck (like the kernel)
+// rejects that unless the runt group is dropped.
+func TestExt4RuntFinalGroupConformance(t *testing.T) {
+	runE2fsck(t, NewExt4(testDeps()), 65792*4096, false)
+}
+
 // Mutated images must also pass e2fsck, proving the staged re-layout produces a
 // consistent filesystem.
 func TestExt2MutationConformance(t *testing.T) { runE2fsck(t, NewExt2(testDeps()), 16<<20, true) }

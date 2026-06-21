@@ -61,21 +61,39 @@ func computeGeometry(devSize int64, blockSize, inodeSize uint32) (geometry, erro
 	g.inodesPerBlock = uint64(blockSize) / uint64(g.inodeSize)
 
 	g.numGroups = ceilDiv(g.totalBlocks-g.firstDataBlock, g.blocksPerGroup)
-	g.gdtBlocks = ceilDiv(g.numGroups*descSize, uint64(blockSize))
 
-	// Inode count from the bytes-per-inode heuristic, then spread across groups.
-	ic := uint64(devSize) / bytesPerInode
-	ipg := ceilDiv(ic, g.numGroups)
-	if ipg < 16 {
-		ipg = 16
+	// Derive the inode geometry as a pure function of numGroups, then guard the
+	// final group: every group — including a short trailing one — carries the
+	// full per-group inode table, so a "runt" final group can be smaller than its
+	// own overhead, leaving its inode table running past the group (and the
+	// device). The kernel's ext4_check_descriptors rejects exactly that. Like
+	// mke2fs, drop a runt final group: its trailing blocks become unused. Dropping
+	// reduces numGroups, which feeds back into the inode geometry, so re-derive and
+	// re-check (the new final group is a full group, so this settles immediately).
+	for {
+		g.gdtBlocks = ceilDiv(g.numGroups*descSize, uint64(blockSize))
+
+		// Inode count from the bytes-per-inode heuristic, then spread across groups.
+		ic := uint64(devSize) / bytesPerInode
+		ipg := ceilDiv(ic, g.numGroups)
+		if ipg < 16 {
+			ipg = 16
+		}
+		ipg = roundUp(ipg, 8)
+		if max := g.blocksPerGroup; ipg > max { // inode bitmap holds blocksPerGroup bits
+			ipg = max
+		}
+		g.inodesPerGroup = ipg
+		g.inodesCount = ipg * g.numGroups
+		g.inodeTableBlocks = ceilDiv(ipg*uint64(g.inodeSize), uint64(blockSize))
+
+		last := g.numGroups - 1
+		if g.numGroups <= 1 || g.blocksInGroup(last) >= g.overhead(last)+runtMinDataBlocks {
+			break
+		}
+		g.numGroups--
+		g.totalBlocks = g.firstDataBlock + g.numGroups*g.blocksPerGroup
 	}
-	ipg = roundUp(ipg, 8)
-	if max := g.blocksPerGroup; ipg > max { // inode bitmap holds blocksPerGroup bits
-		ipg = max
-	}
-	g.inodesPerGroup = ipg
-	g.inodesCount = ipg * g.numGroups
-	g.inodeTableBlocks = ceilDiv(ipg*uint64(g.inodeSize), uint64(blockSize))
 
 	// Sanity: group 0 must hold the reserved inodes and lost+found.
 	if g.inodesPerGroup < firstIno {

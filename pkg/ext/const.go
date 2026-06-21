@@ -21,6 +21,11 @@ const (
 	ext4DefaultBlockSize = 4096
 	bytesPerInode        = 16384 // sizing heuristic, as in mke2fs
 
+	// runtMinDataBlocks is the minimum number of usable data blocks a final group
+	// must hold beyond its own overhead; below this it is dropped as a runt group
+	// (its inode table would otherwise overrun the group). See computeGeometry.
+	runtMinDataBlocks = 8
+
 	// Revision levels.
 	dynamicRev = 1
 
