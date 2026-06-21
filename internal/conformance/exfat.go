@@ -31,6 +31,30 @@ func FsckExFAT(imagePath string) (string, error) {
 	return string(out), err
 }
 
+// MakeExFAT formats the file at imagePath (which must already exist at the
+// desired size) as an empty exFAT volume using the real mkfs.exfat, on the host
+// or via a container. ErrUnavailable means no tool was found.
+func MakeExFAT(imagePath string) (string, error) {
+	if host, err := exec.LookPath("mkfs.exfat"); err == nil {
+		out, err := exec.Command(host, imagePath).CombinedOutput()
+		return string(out), err
+	}
+	runtime := containerRuntime()
+	if runtime == "" {
+		return "", ErrUnavailable
+	}
+	dir, err := filepath.Abs(filepath.Dir(imagePath))
+	if err != nil {
+		return "", err
+	}
+	base := filepath.Base(imagePath)
+	script := fmt.Sprintf(
+		"command -v mkfs.exfat >/dev/null 2>&1 || apk add -q exfatprogs >/dev/null 2>&1; mkfs.exfat /work/%s", base)
+	cmd := exec.Command(runtime, "run", "--rm", "-v", dir+":/work:Z", e2fsprogsImage(), "sh", "-c", script)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
 // CheckExFATClean reports whether fsck.exfat output indicates a clean volume.
 func CheckExFATClean(out string) bool {
 	return strings.Contains(out, "clean") &&

@@ -4,6 +4,7 @@ package iso
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -51,5 +52,58 @@ func TestXorrisoExtract(t *testing.T) {
 	}
 	if target, err := os.Readlink(filepath.Join(out, "link")); err != nil || target != "etc/hosts" {
 		t.Errorf("symlink = %q (%v)", target, err)
+	}
+}
+
+// TestReadXorrisoISO builds a Rock Ridge ISO with the real xorriso (as mkisofs)
+// and reads it back with our parser, checking we recover tool-written names,
+// nested files and symlinks. Run: go test -tags conformance ./pkg/iso/
+func TestReadXorrisoISO(t *testing.T) {
+	parent, err := os.MkdirTemp("", "fsforge-isoread-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(parent)
+
+	src := filepath.Join(parent, "src")
+	if err := os.MkdirAll(filepath.Join(src, "etc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(src, "readme.txt"), []byte("hello iso\n"), 0o644)
+	os.WriteFile(filepath.Join(src, "etc", "hosts"), []byte("127.0.0.1 localhost\n"), 0o644)
+	if err := os.Symlink("etc/hosts", filepath.Join(src, "link")); err != nil {
+		t.Fatal(err)
+	}
+
+	imgPath := filepath.Join(parent, "out.iso")
+	combined, err := conformance.MakeISO(src, imgPath)
+	if errors.Is(err, conformance.ErrUnavailable) {
+		t.Skip("xorriso unavailable (no host binary or container runtime)")
+	}
+	if err != nil {
+		t.Fatalf("mkisofs failed: %v\n%s", err, combined)
+	}
+
+	f, err := os.Open(imgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	info, _ := f.Stat()
+
+	opened, err := New(testDeps()).Open(device.NewFile(f, info.Size()))
+	if err != nil {
+		t.Fatalf("Open xorriso ISO: %v", err)
+	}
+	root := opened.(rootNoder).RootNode()
+
+	if got := string(readAll(t, find(root, "readme.txt"))); got != "hello iso\n" {
+		t.Errorf("readme.txt = %q", got)
+	}
+	if got := string(readAll(t, find(find(root, "etc"), "hosts"))); got != "127.0.0.1 localhost\n" {
+		t.Errorf("etc/hosts = %q", got)
+	}
+	if ln := find(root, "link"); ln == nil || ln.Mode&fs.ModeSymlink == 0 || ln.Link != "etc/hosts" {
+		t.Errorf("symlink not recovered from xorriso ISO: %+v", ln)
 	}
 }
