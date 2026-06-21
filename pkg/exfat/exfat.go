@@ -2,7 +2,6 @@ package exfat
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -14,11 +13,12 @@ import (
 
 var le = binary.LittleEndian
 
-// ExFAT is the exFAT create engine, implementing image.Filesystem. It writes
-// large/removable-media volumes whose images pass fsck.exfat. Being a
-// DOS-lineage format it carries no owners, permissions or links; symlinks are
-// rejected. See the package doc for the on-disk strategy. Open is not yet
-// supported (mutation rebuilds).
+// ExFAT is the exFAT engine, implementing image.Filesystem. Format writes
+// large/removable-media volumes whose images pass fsck.exfat; being a
+// DOS-lineage format it carries no owners, permissions or links, and symlinks
+// are rejected. Open parses an existing volume into the tree so exFAT can be a
+// conversion source, but the opened image is read-only (mutation rebuilds). See
+// the package doc for the on-disk strategy.
 type ExFAT struct{ deps image.Deps }
 
 // New returns an exFAT engine wired with deps. Nil Clock/UUID are replaced with
@@ -51,11 +51,6 @@ func (e *ExFAT) Format(dev device.Device, p image.Params) (image.Image, error) {
 	}
 	mem := image.NewMem(e.deps, tree.Meta{Mode: fs.ModeDir | 0o755})
 	return &exfatImage{Mem: mem, dev: dev, geo: geo, label: p.Label, deps: e.deps}, nil
-}
-
-// Open is not supported yet; exFAT mutation will rebuild.
-func (e *ExFAT) Open(device.Device) (image.Image, error) {
-	return nil, errors.New("exfat: Open not supported (create-only)")
 }
 
 type layouter struct {

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/emmanuel-deloget/fsforge/pkg/device"
+	"github.com/emmanuel-deloget/fsforge/pkg/exfat"
 	"github.com/emmanuel-deloget/fsforge/pkg/ext"
 	"github.com/emmanuel-deloget/fsforge/pkg/image"
 	"github.com/emmanuel-deloget/fsforge/pkg/oci"
@@ -36,8 +37,8 @@ type Options struct {
 }
 
 // Convert bridges any supported source to any supported sink through the shared
-// tree model: dir/ext2/ext4/squashfs/oci → tree → dir/ext/squashfs/fat/exfat/
-// iso/oci. File contents are streamed, not buffered.
+// tree model: dir/ext2/ext4/squashfs/exfat/oci → tree → dir/ext/squashfs/fat/
+// exfat/iso/oci. File contents are streamed, not buffered.
 func Convert(from, to Location, opt Options) error {
 	if opt.Deps.Clock == nil {
 		opt.Deps = HostDeps()
@@ -80,6 +81,9 @@ func loadTree(kind, path string, deps image.Deps) (*image.Node, *oci.Image, func
 
 	case "squashfs":
 		return openImage(path, squashfs.New(deps))
+
+	case "exfat":
+		return openImage(path, exfat.New(deps))
 
 	case "oci":
 		l, err := oci.OpenLayout(path)

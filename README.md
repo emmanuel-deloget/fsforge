@@ -23,7 +23,7 @@ back to convert or mutate).
 | ext2 / ext3 / ext4| ✅     | ✅                    | `e2fsck`           |
 | squashfs          | ✅     | ✅                    | `unsquashfs`       |
 | FAT12 / 16 / 32   | ✅     | —                     | `fsck.fat`         |
-| exFAT             | ✅     | —                     | `fsck.exfat`       |
+| exFAT             | ✅     | ✅                    | `fsck.exfat`       |
 | ISO9660 + Rock Ridge | ✅  | —                     | `xorriso`          |
 | OCI image layout  | ✅     | ✅ (flatten)          | `podman`           |
 | GPT / MBR disks   | ✅     | —                     | `sfdisk` + per-part `fsck` |
