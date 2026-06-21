@@ -3,6 +3,7 @@ package qcow2
 import (
 	"bytes"
 	"io"
+	"sort"
 	"testing"
 )
 
@@ -41,7 +42,10 @@ func (m *memFile) Truncate(n int64) error {
 const virtual = 8 << 20 // 8 MiB virtual disk
 
 // writePattern writes recognisable data at a few scattered offsets, mirroring
-// how a partition table touches both ends of the disk.
+// how a partition table touches both ends of the disk. The writes are issued in
+// a fixed (offset-sorted) order: the Writer allocates host clusters in write
+// order, so a deterministic order is what makes its output reproducible — just
+// as a real engine's layout pass writes deterministically.
 func writePattern(t *testing.T, w *Writer) map[int64][]byte {
 	t.Helper()
 	regions := map[int64][]byte{
@@ -51,8 +55,13 @@ func writePattern(t *testing.T, w *Writer) map[int64][]byte {
 		3 * clusterSize: bytes.Repeat([]byte{0xAB}, clusterSize), // a full cluster
 		virtual - 512:   bytes.Repeat([]byte("END."), 128),       // backup GPT area
 	}
-	for off, data := range regions {
-		if _, err := w.WriteAt(data, off); err != nil {
+	offs := make([]int64, 0, len(regions))
+	for off := range regions {
+		offs = append(offs, off)
+	}
+	sort.Slice(offs, func(i, j int) bool { return offs[i] < offs[j] })
+	for _, off := range offs {
+		if _, err := w.WriteAt(regions[off], off); err != nil {
 			t.Fatalf("WriteAt %d: %v", off, err)
 		}
 	}
