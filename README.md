@@ -96,6 +96,9 @@ fsforge convert -from oci:./alpine-oci -to squashfs:rootfs.sqfs
 fsforge disk -output disk.img -size 512M \
   -part esp:fat:./esp:64M -part root:ext4:./rootfs:rest
 
+# Stack another layer onto an existing OCI image (additive, or -diff for a delta).
+fsforge oci-add-layer -image ./image-oci -ref app:v1 -from ./patch
+
 # Reproducible output: fixed timestamps and UUID.
 SOURCE_DATE_EPOCH=0 fsforge mkfs -type ext4 -source ./rootfs \
   -output root.img -size 256M -reproducible

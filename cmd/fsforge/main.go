@@ -20,6 +20,8 @@ func main() {
 		err = convert(os.Args[2:])
 	case "disk":
 		err = disk(os.Args[2:])
+	case "oci-add-layer":
+		err = ociAddLayer(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 		return
@@ -40,6 +42,7 @@ usage:
   fsforge mkfs -type <ext2|ext4|fat|squashfs> -source <dir> -output <file> [options]
   fsforge convert -from <kind>:<path> -to <kind>:<path> [options]
   fsforge disk -output <file> -size <size> -part <role>:<fstype>:<source>:<size> ...
+  fsforge oci-add-layer -image <oci-dir> -from <dir|kind:path> [-ref <tag>] [-diff]
 
 mkfs options:
   -type         filesystem type (ext2, ext4, squashfs)        [required]
@@ -69,5 +72,16 @@ disk: a GPT disk with one or more engine-formatted partitions.
 
   e.g. fsforge disk -output disk.img -size 512M \
          -part esp:fat:./esp:64M -part root:ext4:./rootfs:rest
+
+oci-add-layer: stack another layer onto an existing OCI image layout.
+  -image <oci-dir> OCI layout directory                         [required]
+  -from <src>      new layer source: a directory or <kind>:<path> [required]
+  -ref <tag>       image ref/tag to extend (default first manifest)
+  -diff            append a delta layer (whiteouts removals) vs additive
+  -gzip            gzip-compress the layer (default true)
+  -reproducible    deterministic output
+
+  e.g. fsforge oci-add-layer -image ./image-oci -ref app:v1 -from ./patch
+       fsforge oci-add-layer -image ./image-oci -from dir:./newroot -diff
 `)
 }

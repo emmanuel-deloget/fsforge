@@ -51,3 +51,50 @@ func AddLayer(dst *Layout, baseRef string, img *image.Mem, opt BuildOptions) (De
 	}
 	return writeImageMeta(dst, append(man.Layers, layerDesc), cfg, ref)
 }
+
+// AddLayerDiff stacks a layer that is the *delta* from the image tagged baseRef
+// to img's tree, and writes an updated config, manifest and index. It returns
+// the new manifest descriptor.
+//
+// Unlike AddLayer, this records deletions: it flattens the base image, diffs it
+// against img, and emits added/changed paths as entries and removed paths as
+// overlay whiteouts. Applied on top of the base, the layer reproduces img
+// exactly — so a round-trip Flatten of the result equals img. Regular files are
+// compared by content (hashed), so equal-sized but modified files are detected.
+//
+// As with AddLayer, the base image's architecture, OS and runtime configuration
+// are preserved, and only opt's Ref, Gzip and Created are used. The result is
+// deterministic when img is wired with a fixed clock.
+func AddLayerDiff(dst *Layout, baseRef string, img *image.Mem, opt BuildOptions) (Descriptor, error) {
+	man, cfg, err := dst.resolve(baseRef)
+	if err != nil {
+		return Descriptor{}, err
+	}
+
+	oldMem, _, cleanup, err := Flatten(dst, baseRef, img.Deps())
+	if err != nil {
+		return Descriptor{}, err
+	}
+	defer cleanup()
+
+	created := opt.Created
+	if created.IsZero() {
+		created = img.Deps().Clock.Now()
+	}
+	createdStr := created.UTC().Format(time.RFC3339)
+
+	layerDesc, diffID, err := writeDiffLayer(dst, oldMem.RootNode(), img.RootNode(), opt.Gzip)
+	if err != nil {
+		return Descriptor{}, err
+	}
+
+	cfg.Created = createdStr
+	cfg.RootFS.DiffIDs = append(cfg.RootFS.DiffIDs, diffID)
+	cfg.History = append(cfg.History, History{Created: createdStr, CreatedBy: "fsforge"})
+
+	ref := opt.Ref
+	if ref == "" {
+		ref = baseRef
+	}
+	return writeImageMeta(dst, append(man.Layers, layerDesc), cfg, ref)
+}
