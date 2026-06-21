@@ -4,8 +4,8 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/emmanuel-deloget/fsforge.svg)](https://pkg.go.dev/github.com/emmanuel-deloget/fsforge)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Build filesystem images in pure Go — no root, no cgo, no shelling out, and
-reproducible by construction.**
+**Build filesystem images in pure Go — zero dependencies, no root, no cgo, no
+shelling out, and reproducible by construction.**
 
 fsforge turns a directory (or an OCI image, or another filesystem image) into a
 valid, mountable filesystem image, entirely in-process. It targets the case Go
@@ -49,6 +49,12 @@ CLI:
 ```bash
 go install github.com/emmanuel-deloget/fsforge/cmd/fsforge@latest
 ```
+
+fsforge has **zero third-party dependencies**: it imports only the Go standard
+library, so its `go.mod` carries no `require` block and there is no `go.sum` —
+nothing transitive to vendor, audit or keep up to date. The external tools in
+the table above are used **only by the conformance tests**, never by the library
+or CLI at runtime.
 
 ## Quickstart — library
 
