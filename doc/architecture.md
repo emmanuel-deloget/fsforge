@@ -95,7 +95,7 @@ Create and mutate are **one pipeline**, not two engines:
 L5  Facade          fsforge: Builder / Convert / EngineFor / Populate     (module root)
 L4  Public API      image: Image / Dir / File / Filesystem / Deps         (pkg/image)
 L3  Logical model   tree:  Inode / Dirent / Meta / Source                 (pkg/tree)
-L2  Engines         ext2/3/4, squashfs, erofs, exfat, fat, iso9660, cpio, oci  (pkg/<fs>)
+L2  Engines         ext2/3/4, squashfs, erofs, exfat, fat, iso9660, cpio, udf, oci  (pkg/<fs>)
 L1  Container       MBR / GPT partition tables  ·  qcow2 (disk image)     (pkg/partition, pkg/qcow2)
 L0  Block backend   device: Device / Discarder, Mem / File / Section      (pkg/device)
         ┌── policy injected into engines ──┐
@@ -108,10 +108,10 @@ The facade (L5) sits above everything and only *wires* the lower layers; it
 holds no format logic.
 
 Each engine implements `image.Filesystem` and is a **write target**. The current
-engines are ext2/3/4, squashfs, EROFS, FAT12/16/32, exFAT, ISO9660 + Rock Ridge
-and cpio (newc), with OCI image read/write bridged through the same tree.
+engines are ext2/3/4, squashfs, EROFS, FAT12/16/32, exFAT, ISO9660 + Rock Ridge,
+cpio (newc) and UDF, with OCI image read/write bridged through the same tree.
 Engines that can also *load* an existing image (ext, squashfs, EROFS, exFAT,
-ISO9660, cpio, OCI) double as conversion sources.
+ISO9660, cpio, UDF, OCI) double as conversion sources.
 
 EROFS, like squashfs, is read-only once mounted but is nonetheless a *write
 target* in fsforge's sense: the engine produces the image. It writes an
@@ -128,6 +128,19 @@ the device, and `Open` parses one back, folding hard-linked regular files onto a
 shared node. The output is a ready-to-boot uncompressed initramfs; outer
 gzip/xz wrapping, when wanted, is applied around the archive, not inside the
 engine. It is validated against GNU `cpio`.
+
+The UDF engine targets the format of optical media (DVD/Blu-ray) and large
+removable disks: ECMA-167 volume and file structures constrained by the OSTA UDF
+2.01 specification. It writes a read-only image — 2048-byte blocks, the Volume
+Recognition Sequence, a main and reserve Volume Descriptor Sequence, anchors at
+block 256 and the last block, and a single Type-1 read-only partition holding the
+File Set Descriptor, File Entries (short allocation descriptors) and File
+Identifier Descriptors. Choosing a *read-only* partition is the key
+simplification: it carries no unallocated-space bitmap, the way a pressed disc
+does not. The reader additionally understands Extended File Entries and the long
+and in-ICB allocation forms, so a tool-written image opens as a conversion
+source. It is validated by mounting under the real Linux kernel UDF driver (via
+guestfish), by `udfinfo`, and by 7-Zip's independent UDF reader.
 
 ### 6.1 QCOW2 — a container at the device layer
 
@@ -172,6 +185,7 @@ because that is the only directory mapping onto the bare published import path
 | `pkg/squashfs/`          | squashfs engine (writer + reader).                              |
 | `pkg/erofs/`             | EROFS engine (uncompressed writer + reader).                    |
 | `pkg/cpio/`              | cpio newc engine (initramfs archive writer + reader).           |
+| `pkg/udf/`               | UDF 2.01 engine (read-only ECMA-167 writer + reader).           |
 | `pkg/qcow2/`             | QCOW2 disk-image container as a device (writer + reader).        |
 | `pkg/fat/`               | FAT12/16/32 engine (ESP/boot/data volumes).                     |
 | `pkg/exfat/`             | exFAT engine (large/removable volumes).                          |
@@ -208,6 +222,7 @@ The shape (see the module root, `pkg/image`, `pkg/tree`, `pkg/alloc`):
 - squashfs format — kernel docs / `squashfs-tools`.
 - EROFS on-disk format — kernel `fs/erofs/erofs_fs.h` / `erofs-utils`.
 - cpio newc format — kernel `init/initramfs.c`, `usr/gen_init_cpio.c`, GNU cpio.
+- UDF — ECMA-167 3rd edition and the OSTA UDF 2.01 specification; kernel `fs/udf/`.
 - QCOW2 format — QEMU `docs/interop/qcow2.txt`; validated with `qemu-img`.
 - exFAT specification — Microsoft (opened, 2019).
 - ISO9660 / ECMA-119 and the Rock Ridge / SUSP extensions.
