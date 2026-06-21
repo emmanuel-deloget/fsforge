@@ -314,6 +314,41 @@ func TestGeometry(t *testing.T) {
 	}
 }
 
+// TestRuntFinalGroup guards issue #12: a device whose size leaves a small
+// remainder past the last full block group must not produce a final group whose
+// inode table overruns the group (the kernel's ext4_check_descriptors rejects
+// it). computeGeometry drops such a runt group, mke2fs-style.
+func TestRuntFinalGroup(t *testing.T) {
+	const bs = 4096
+	// The exact pathological size from the issue: 65792 blocks, last group only
+	// 256 blocks while its inode table alone needs 343.
+	sizes := []int64{65792 * bs}
+	// Sweep sizes around a group boundary so a short trailing group is exercised
+	// across the whole runt range, not just the one reported number.
+	for blocks := int64(32769); blocks <= 32769+1024; blocks += 7 {
+		sizes = append(sizes, blocks*bs)
+	}
+	for _, devSize := range sizes {
+		g, err := computeGeometry(devSize, bs, 256)
+		if err != nil {
+			t.Fatalf("devSize=%d: %v", devSize, err)
+		}
+		for gr := uint64(0); gr < g.numGroups; gr++ {
+			_, _, inodeTable, _ := g.groupLayout(gr)
+			start := g.groupStart(gr)
+			end := start + g.blocksInGroup(gr) - 1 // last block of the group
+			if itEnd := inodeTable + g.inodeTableBlocks - 1; itEnd > end {
+				t.Errorf("devSize=%d group %d: inode table ends at %d, past group end %d",
+					devSize, gr, itEnd, end)
+			}
+			if end >= g.totalBlocks {
+				t.Errorf("devSize=%d group %d: end %d past device (%d blocks)",
+					devSize, gr, end, g.totalBlocks)
+			}
+		}
+	}
+}
+
 func TestDirBlocksRoundTrip(t *testing.T) {
 	entries := []dentry{
 		{ino: 2, name: ".", ftype: ftDir},
