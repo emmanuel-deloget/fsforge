@@ -110,8 +110,8 @@ holds no format logic.
 Each engine implements `image.Filesystem` and is a **write target**. The current
 engines are ext2/3/4, squashfs, FAT12/16/32, exFAT and ISO9660 + Rock Ridge,
 with OCI image read/write bridged through the same tree. Engines that can also
-*load* an existing image (ext, squashfs, exFAT, OCI) double as conversion
-sources.
+*load* an existing image (ext, squashfs, exFAT, ISO9660, OCI) double as
+conversion sources.
 
 ## 7. Project layout
 

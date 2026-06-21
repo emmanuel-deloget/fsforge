@@ -40,12 +40,6 @@ func TestSpecialFilesAndNames(t *testing.T) {
 	}
 }
 
-func TestOpenUnsupported(t *testing.T) {
-	if _, err := New(testDeps()).Open(device.NewMem(1 << 20)); err == nil {
-		t.Fatal("ISO Open should report it is unsupported")
-	}
-}
-
 func TestNewNilClock(t *testing.T) {
 	e := New(image.Deps{}) // nil Clock must be defaulted
 	dev := device.NewMem(16 << 20)

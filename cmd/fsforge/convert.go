@@ -12,7 +12,7 @@ import (
 // tree model, delegating entirely to the fsforge package.
 func convert(args []string) error {
 	fsSet := flag.NewFlagSet("convert", flag.ContinueOnError)
-	from := fsSet.String("from", "", "source as <kind>:<path> (dir, ext2, ext4, squashfs, exfat, oci)")
+	from := fsSet.String("from", "", "source as <kind>:<path> (dir, ext2, ext4, squashfs, exfat, iso, oci)")
 	to := fsSet.String("to", "", "sink as <kind>:<path> (dir, ext2, ext4, squashfs, fat, exfat, iso, oci)")
 	sizeStr := fsSet.String("size", "", "image size for fixed-size sinks, e.g. 512M")
 	blockSize := fsSet.Uint("block-size", 0, "block size in bytes")

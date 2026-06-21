@@ -24,7 +24,7 @@ back to convert or mutate).
 | squashfs          | ✅     | ✅                    | `unsquashfs`       |
 | FAT12 / 16 / 32   | ✅     | —                     | `fsck.fat`         |
 | exFAT             | ✅     | ✅                    | `fsck.exfat`       |
-| ISO9660 + Rock Ridge | ✅  | —                     | `xorriso`          |
+| ISO9660 + Rock Ridge | ✅  | ✅                    | `xorriso`          |
 | OCI image layout  | ✅     | ✅ (flatten)          | `podman`           |
 | GPT / MBR disks   | ✅     | —                     | `sfdisk` + per-part `fsck` |
 
