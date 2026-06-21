@@ -22,6 +22,7 @@ back to convert or mutate).
 |-------------------|:------:|:---------------------:|--------------------|
 | ext2 / ext3 / ext4| ✅     | ✅                    | `e2fsck`           |
 | squashfs          | ✅     | ✅                    | `unsquashfs`       |
+| EROFS             | ✅     | ✅                    | `fsck.erofs`       |
 | FAT12 / 16 / 32   | ✅     | —                     | `fsck.fat`         |
 | exFAT             | ✅     | ✅                    | `fsck.exfat`       |
 | ISO9660 + Rock Ridge | ✅  | ✅                    | `xorriso`          |

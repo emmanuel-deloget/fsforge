@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/emmanuel-deloget/fsforge/pkg/erofs"
 	"github.com/emmanuel-deloget/fsforge/pkg/exfat"
 	"github.com/emmanuel-deloget/fsforge/pkg/ext"
 	"github.com/emmanuel-deloget/fsforge/pkg/fat"
@@ -19,8 +20,8 @@ import (
 
 // EngineFor returns the image.Filesystem engine for a filesystem type name,
 // wired with deps. Recognised types: ext2, ext4, fat (fat32), exfat, iso
-// (iso9660) and squashfs. blockSize, when non-zero, is forwarded to engines
-// that accept one (currently squashfs).
+// (iso9660), squashfs and erofs. blockSize, when non-zero, is forwarded to
+// engines that accept one (currently squashfs).
 func EngineFor(fstype string, deps image.Deps, blockSize uint32) (image.Filesystem, error) {
 	switch fstype {
 	case "ext2":
@@ -33,6 +34,8 @@ func EngineFor(fstype string, deps image.Deps, blockSize uint32) (image.Filesyst
 		return exfat.New(deps), nil
 	case "iso", "iso9660":
 		return iso.New(deps), nil
+	case "erofs":
+		return erofs.New(deps), nil
 	case "squashfs":
 		var opts []squashfs.Option
 		if blockSize != 0 {
@@ -48,7 +51,7 @@ func EngineFor(fstype string, deps image.Deps, blockSize uint32) (image.Filesyst
 // trimmed afterwards (squashfs, iso) rather than from an explicit -size.
 func sizedFromContent(fstype string) bool {
 	switch fstype {
-	case "squashfs", "iso", "iso9660":
+	case "squashfs", "iso", "iso9660", "erofs":
 		return true
 	}
 	return false
@@ -92,6 +95,8 @@ func trim(fstype string, f *os.File) error {
 		return trimSquashfs(f)
 	case "iso", "iso9660":
 		return trimISO(f)
+	case "erofs":
+		return trimErofs(f)
 	}
 	return nil
 }
@@ -114,6 +119,16 @@ func trimISO(f *os.File) error {
 		return err
 	}
 	return f.Truncate(int64(binary.LittleEndian.Uint32(b)) * 2048)
+}
+
+// trimErofs shrinks the output to the blocks the engine used (superblock
+// `blocks`, a u32 at offset 36 within the 1024-byte superblock, times 4 KiB).
+func trimErofs(f *os.File) error {
+	b := make([]byte, 4)
+	if _, err := f.ReadAt(b, 1024+36); err != nil {
+		return err
+	}
+	return f.Truncate(int64(binary.LittleEndian.Uint32(b)) * 4096)
 }
 
 // ParseSize parses a human size such as "64M", "512m", "2G" or a plain byte

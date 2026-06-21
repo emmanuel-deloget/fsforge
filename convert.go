@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/emmanuel-deloget/fsforge/pkg/device"
+	"github.com/emmanuel-deloget/fsforge/pkg/erofs"
 	"github.com/emmanuel-deloget/fsforge/pkg/exfat"
 	"github.com/emmanuel-deloget/fsforge/pkg/ext"
 	"github.com/emmanuel-deloget/fsforge/pkg/image"
@@ -16,7 +17,7 @@ import (
 )
 
 // Location names one end of a conversion: a Kind (dir, ext2, ext4, squashfs,
-// oci, fat, exfat, iso) and a filesystem Path.
+// erofs, oci, fat, exfat, iso) and a filesystem Path.
 type Location struct {
 	Kind string
 	Path string
@@ -89,6 +90,9 @@ func loadTree(kind, path string, deps image.Deps) (*image.Node, *oci.Image, func
 	case "iso", "iso9660":
 		return openImage(path, iso.New(deps))
 
+	case "erofs":
+		return openImage(path, erofs.New(deps))
+
 	case "oci":
 		l, err := oci.OpenLayout(path)
 		if err != nil {
@@ -131,7 +135,7 @@ func writeTree(root *image.Node, to Location, cfg *oci.Image, opt Options) error
 	case "dir":
 		return ExtractToDir(root, to.Path)
 
-	case "ext2", "ext4", "squashfs", "fat", "fat32", "exfat", "iso", "iso9660":
+	case "ext2", "ext4", "squashfs", "fat", "fat32", "exfat", "iso", "iso9660", "erofs":
 		b := &Builder{fstype: to.Kind, deps: opt.Deps, size: opt.Size, blockSize: opt.BlockSize}
 		return b.BuildFromTree(root, to.Path)
 
