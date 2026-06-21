@@ -29,6 +29,12 @@ back to convert or mutate).
 | ISO9660 + Rock Ridge | ✅  | ✅                    | `xorriso`          |
 | OCI image layout  | ✅     | ✅ (flatten)          | `podman`           |
 | GPT / MBR disks   | ✅     | —                     | `sfdisk` + per-part `fsck` |
+| QCOW2 container   | ✅     | ✅                    | `qemu-img`         |
+
+QCOW2 is a disk-image *container*, not a filesystem: it wraps any of the above.
+Give an output path ending in `.qcow2` to `mkfs`, a `convert` sink, or
+`fsforge disk` and the result is a sparse QCOW2 (e.g. a bootable VM disk);
+QCOW2 inputs are decoded transparently.
 
 ## Install
 

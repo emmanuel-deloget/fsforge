@@ -64,7 +64,7 @@ convert: <kind> is dir, ext2, ext4, squashfs, exfat, iso, erofs, cpio or oci.
        fsforge convert -from dir:./rootfs    -to oci:./image-oci -ref app:v1
 
 disk: a GPT disk with one or more engine-formatted partitions.
-  -output <file>   output disk image                          [required]
+  -output <file>   output disk image; a .qcow2/.qcow path emits QCOW2 [required]
   -size <size>     total disk size (e.g. 512M, 2G)             [required]
   -part R:F:S:Z    role R (esp|root|data), fstype F (fat|ext2|ext4),
                    source dir S, size Z (e.g. 64M or 'rest'); repeatable
@@ -72,6 +72,10 @@ disk: a GPT disk with one or more engine-formatted partitions.
 
   e.g. fsforge disk -output disk.img -size 512M \
          -part esp:fat:./esp:64M -part root:ext4:./rootfs:rest
+       fsforge disk -output vm.qcow2 -size 2G -part root:ext4:./rootfs:rest
+
+Any output path ending in .qcow2/.qcow (for mkfs, convert sinks or disk) writes
+a sparse QCOW2 container; QCOW2 inputs are decoded transparently.
 
 oci-add-layer: stack another layer onto an existing OCI image layout.
   -image <oci-dir> OCI layout directory                         [required]

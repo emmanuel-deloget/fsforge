@@ -11,6 +11,7 @@ import (
 	"github.com/emmanuel-deloget/fsforge/pkg/device"
 	"github.com/emmanuel-deloget/fsforge/pkg/image"
 	"github.com/emmanuel-deloget/fsforge/pkg/partition"
+	"github.com/emmanuel-deloget/fsforge/pkg/qcow2"
 )
 
 // disk builds a GPT or MBR disk with one or more partitions, each formatted
@@ -45,10 +46,24 @@ func disk(args []string) error {
 		return err
 	}
 	defer f.Close()
-	if err := f.Truncate(total); err != nil {
-		return err
+
+	// A .qcow2/.qcow output wraps the disk in a QCOW2 container; otherwise it is
+	// a raw image. Either way the partition tables and engines see a plain
+	// device of `total` bytes.
+	var dev device.Device
+	finalize := func() error { return nil }
+	if fsforge.IsQcow2Path(*output) {
+		qw, err := qcow2.NewWriter(f, total)
+		if err != nil {
+			return err
+		}
+		dev, finalize = qw, qw.Finalize
+	} else {
+		if err := f.Truncate(total); err != nil {
+			return err
+		}
+		dev = device.NewFile(f, total)
 	}
-	dev := device.NewFile(f, total)
 
 	parts, err := formatScheme(*scheme, dev, deps, specs)
 	if err != nil {
@@ -79,6 +94,9 @@ func disk(args []string) error {
 			return fmt.Errorf("finalize %s: %w", s.role, err)
 		}
 		fmt.Printf("  partition %d (%s, %s): LBA %d-%d\n", i+1, s.role, s.fstype, parts[i].StartLBA, parts[i].EndLBA)
+	}
+	if err := finalize(); err != nil {
+		return fmt.Errorf("finalize container: %w", err)
 	}
 	fmt.Printf("wrote %s disk %s\n", *scheme, *output)
 	return nil

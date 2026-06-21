@@ -118,6 +118,36 @@ func TestEngineForUnknown(t *testing.T) {
 	}
 }
 
+// TestBuilderQcow2RoundTrip builds an ext4 filesystem inside a QCOW2 container
+// through the facade (exercising the .qcow2 output backend) and converts it back
+// to a directory (exercising transparent QCOW2 input decoding).
+func TestBuilderQcow2RoundTrip(t *testing.T) {
+	src := sampleTree(t)
+	out := filepath.Join(t.TempDir(), "root.qcow2")
+	if !fsforge.IsQcow2Path(out) {
+		t.Fatal("IsQcow2Path should recognise .qcow2")
+	}
+	if err := fsforge.New("ext4").Reproducible(1700000000).Size("32M").BuildFromDir(src, out); err != nil {
+		t.Fatalf("BuildFromDir ext4->qcow2: %v", err)
+	}
+	// The container must be smaller than the 32 MiB virtual size (sparse).
+	info, err := os.Stat(out)
+	if err != nil || info.Size() == 0 || info.Size() >= 32<<20 {
+		t.Fatalf("qcow2 not sparse/created: size=%d err=%v", info.Size(), err)
+	}
+
+	back := t.TempDir()
+	if err := fsforge.Convert(
+		fsforge.Location{Kind: "ext4", Path: out},
+		fsforge.Location{Kind: "dir", Path: back},
+		fsforge.Options{},
+	); err != nil {
+		t.Fatalf("Convert ext4:qcow2->dir: %v", err)
+	}
+	assertFile(t, filepath.Join(back, "hello.txt"), "hello fsforge\n")
+	assertFile(t, filepath.Join(back, "etc", "hosts"), "127.0.0.1 localhost\n")
+}
+
 // TestBuilderCpioRoundTrip builds a content-sized, trimmed cpio archive through
 // the facade (exercising trimCpio) and converts it back to a directory.
 func TestBuilderCpioRoundTrip(t *testing.T) {
