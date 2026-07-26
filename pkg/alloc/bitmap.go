@@ -96,6 +96,23 @@ func (b *Bitmap) Alloc(n uint64) (uint64, error) {
 	return 0, ErrNoSpace
 }
 
+// AllocUpTo reserves at most n blocks from the lowest free run and reports how
+// many it got, so a caller that can live with several runs (see AllocRuns) makes
+// progress where Alloc would fail. It errors on n == 0 and returns ErrNoSpace
+// only when nothing is free.
+func (b *Bitmap) AllocUpTo(n uint64) (start, got uint64, err error) {
+	if n == 0 {
+		return 0, 0, errZeroLen
+	}
+	start = b.firstFree(b.hint)
+	if start >= b.total {
+		return 0, 0, ErrNoSpace
+	}
+	got = min(b.firstUsed(start)-start, n)
+	b.take(start, got)
+	return start, got, nil
+}
+
 // Free releases the run of n blocks starting at start. It errors if the run
 // extends past the managed range.
 func (b *Bitmap) Free(start, n uint64) error {
