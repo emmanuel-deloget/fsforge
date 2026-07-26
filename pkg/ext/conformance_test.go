@@ -4,11 +4,14 @@ package ext
 
 import (
 	"errors"
+	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/emmanuel-deloget/fsforge/internal/conformance"
 	"github.com/emmanuel-deloget/fsforge/pkg/device"
+	"github.com/emmanuel-deloget/fsforge/pkg/image"
 	"github.com/emmanuel-deloget/fsforge/pkg/tree"
 )
 
@@ -29,6 +32,84 @@ func TestExt4RuntFinalGroupConformance(t *testing.T) {
 // consistent filesystem.
 func TestExt2MutationConformance(t *testing.T) { runE2fsck(t, NewExt2(testDeps()), 16<<20, true) }
 func TestExt4MutationConformance(t *testing.T) { runE2fsck(t, NewExt4(testDeps()), 64<<20, true) }
+
+// A file too large for one extent (32768 blocks) and for the largest run a block
+// group can offer must still be laid out, and e2fsprogs must agree: e2fsck finds
+// the image clean and debugfs dumps the file back byte for byte. The 1 KiB case
+// fragments the file over enough runs that the extent tree needs index nodes of
+// its own, which is what validates them against a real implementation.
+func TestExt4LargeFileConformance(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		bs       uint32
+		fileSize int64
+		devSize  int64
+	}{
+		{"indexed extent tree", 1024, 40 << 20, 96 << 20},
+		{"multi-extent 300MiB", 4096, 300 << 20, 512 << 20},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runLargeFileE2fsck(t, tc.bs, tc.fileSize, tc.devSize)
+		})
+	}
+}
+
+func runLargeFileE2fsck(t *testing.T, bs uint32, fileSize, devSize int64) {
+	t.Helper()
+	dir := t.TempDir()
+	f, err := os.CreateTemp(dir, "fsforge-*.img")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := f.Truncate(devSize); err != nil {
+		t.Fatal(err)
+	}
+
+	e := NewExt4(testDeps())
+	img, err := e.Format(device.NewFile(f, devSize), image.Params{Label: "fsforge", BlockSize: bs})
+	if err != nil {
+		t.Fatalf("Format: %v", err)
+	}
+	if _, err := img.Root().Create("big", patternSource{size: fileSize}, meta(0o644)); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := img.Finalize(); err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
+	if err := f.Sync(); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := conformance.E2fsck(f.Name())
+	if errors.Is(err, conformance.ErrUnavailable) {
+		t.Skip("e2fsprogs unavailable (no host binary or container runtime)")
+	}
+	if err != nil {
+		t.Fatalf("e2fsck reported problems: %v\n%s", err, out)
+	}
+	t.Logf("e2fsck clean:\n%s", out)
+
+	dumped := filepath.Join(dir, "big.dump")
+	out, err = conformance.DebugfsDump(f.Name(), "/big", dumped)
+	if errors.Is(err, conformance.ErrUnavailable) {
+		t.Skip("debugfs unavailable")
+	}
+	if err != nil {
+		t.Fatalf("debugfs dump: %v\n%s", err, out)
+	}
+	g, err := os.Open(dumped)
+	if err != nil {
+		t.Fatalf("open dump (debugfs output: %s): %v", out, err)
+	}
+	defer g.Close()
+	if st, err := g.Stat(); err != nil {
+		t.Fatal(err)
+	} else if st.Size() != fileSize {
+		t.Fatalf("dumped size = %d, want %d\n%s", st.Size(), fileSize, out)
+	}
+	checkPattern(t, io.NewSectionReader(g, 0, fileSize), fileSize)
+}
 
 func runE2fsck(t *testing.T, e *Engine, size int64, mutate bool) {
 	t.Helper()

@@ -1,48 +1,116 @@
 package alloc
 
-import "errors"
+import (
+	"errors"
+	"math/bits"
+)
 
 // Bitmap is a deterministic first-fit allocator backed by a bitmap: bit i set
 // means block i is in use. It always returns the lowest contiguous run that
 // fits, so a given sequence of calls yields a byte-identical layout — which is
 // what makes images reproducible.
+//
+// Scanning works a 64-bit word at a time from a "nothing below this is free"
+// hint, so laying out an image with many objects stays close to linear in the
+// number of blocks rather than quadratic.
 type Bitmap struct {
 	bits  []uint64
 	total uint64
+	hint  uint64 // no block below hint is free
 }
+
+var errZeroLen = errors.New("alloc: zero-length allocation")
 
 // NewBitmap returns an allocator managing total blocks, all initially free.
 func NewBitmap(total uint64) *Bitmap {
-	return &Bitmap{bits: make([]uint64, (total+63)/64), total: total}
+	b := &Bitmap{bits: make([]uint64, (total+63)/64), total: total}
+	// Mark the padding bits of the final word as used, so word-at-a-time scans
+	// never report a free block past the managed range.
+	for i := total; i < uint64(len(b.bits))*64; i++ {
+		b.mark(i)
+	}
+	return b
 }
 
-func (b *Bitmap) get(i uint64) bool { return b.bits[i/64]&(1<<(i%64)) != 0 }
-func (b *Bitmap) mark(i uint64)     { b.bits[i/64] |= 1 << (i % 64) }
-func (b *Bitmap) unmark(i uint64)   { b.bits[i/64] &^= 1 << (i % 64) }
+func (b *Bitmap) mark(i uint64)   { b.bits[i/64] |= 1 << (i % 64) }
+func (b *Bitmap) unmark(i uint64) { b.bits[i/64] &^= 1 << (i % 64) }
+
+// firstFree returns the lowest free block at or after from, or total if there
+// is none.
+func (b *Bitmap) firstFree(from uint64) uint64 {
+	if from >= b.total {
+		return b.total
+	}
+	w := b.bits[from/64] | (1<<(from%64) - 1) // pretend bits before from are used
+	for i := from / 64; ; {
+		if w != ^uint64(0) {
+			return i*64 + uint64(bits.TrailingZeros64(^w))
+		}
+		if i++; i >= uint64(len(b.bits)) {
+			return b.total
+		}
+		w = b.bits[i]
+	}
+}
+
+// firstUsed returns the lowest used block at or after from — the end of the free
+// run starting at from — or total if the range is free to the end.
+func (b *Bitmap) firstUsed(from uint64) uint64 {
+	if from >= b.total {
+		return b.total
+	}
+	w := b.bits[from/64] &^ (1<<(from%64) - 1) // ignore bits before from
+	for i := from / 64; ; {
+		if w != 0 {
+			return min(i*64+uint64(bits.TrailingZeros64(w)), b.total)
+		}
+		if i++; i >= uint64(len(b.bits)) {
+			return b.total
+		}
+		w = b.bits[i]
+	}
+}
+
+// take marks the run [start, start+n) as used and refreshes the hint.
+func (b *Bitmap) take(start, n uint64) {
+	for j := start; j < start+n; j++ {
+		b.mark(j)
+	}
+	b.hint = b.firstFree(b.hint)
+}
 
 // Alloc reserves the lowest contiguous run of n free blocks and returns its
 // start. It fails with ErrNoSpace when no such run exists, and errors on n == 0.
 func (b *Bitmap) Alloc(n uint64) (uint64, error) {
 	if n == 0 {
-		return 0, errors.New("alloc: zero-length allocation")
+		return 0, errZeroLen
 	}
-	var run, start uint64
-	for i := uint64(0); i < b.total; i++ {
-		if b.get(i) {
-			run = 0
-			continue
+	for i := b.firstFree(b.hint); i < b.total; {
+		end := b.firstUsed(i)
+		if end-i >= n {
+			b.take(i, n)
+			return i, nil
 		}
-		if run == 0 {
-			start = i
-		}
-		if run++; run == n {
-			for j := start; j < start+n; j++ {
-				b.mark(j)
-			}
-			return start, nil
-		}
+		i = b.firstFree(end)
 	}
 	return 0, ErrNoSpace
+}
+
+// AllocUpTo reserves at most n blocks from the lowest free run and reports how
+// many it got, so a caller that can live with several runs (see AllocRuns) makes
+// progress where Alloc would fail. It errors on n == 0 and returns ErrNoSpace
+// only when nothing is free.
+func (b *Bitmap) AllocUpTo(n uint64) (start, got uint64, err error) {
+	if n == 0 {
+		return 0, 0, errZeroLen
+	}
+	start = b.firstFree(b.hint)
+	if start >= b.total {
+		return 0, 0, ErrNoSpace
+	}
+	got = min(b.firstUsed(start)-start, n)
+	b.take(start, got)
+	return start, got, nil
 }
 
 // Free releases the run of n blocks starting at start. It errors if the run
@@ -54,6 +122,9 @@ func (b *Bitmap) Free(start, n uint64) error {
 	for j := start; j < start+n; j++ {
 		b.unmark(j)
 	}
+	if start < b.hint {
+		b.hint = start // keep first-fit exact: freed blocks come back into play
+	}
 	return nil
 }
 
@@ -64,9 +135,7 @@ func (b *Bitmap) Reserve(start, n uint64) error {
 	if start+n > b.total {
 		return errors.New("alloc: reserve out of range")
 	}
-	for j := start; j < start+n; j++ {
-		b.mark(j)
-	}
+	b.take(start, n)
 	return nil
 }
 

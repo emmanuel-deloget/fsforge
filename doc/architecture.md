@@ -235,6 +235,8 @@ The shape (see the module root, `pkg/image`, `pkg/tree`, `pkg/alloc`):
 - `image.Deps`: the injected `Clock`, `UUIDSource`, `alloc.Factory`, `Logger`.
 - `tree.Source`: lazy file contents (`io.ReaderAt` + `Size`).
 - `alloc.Allocator`: contiguous block runs; the bitmap impl is deterministic.
+  Objects larger than the longest free run (per-group metadata caps a run at one
+  block group) are chained out of several runs by `alloc.AllocRuns`.
 
 ## 9. References
 

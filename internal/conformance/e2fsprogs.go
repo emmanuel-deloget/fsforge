@@ -34,6 +34,37 @@ func Dumpe2fs(imagePath string) (string, error) {
 	return runTool(imagePath, "dumpe2fs", "-h")
 }
 
+// DebugfsDump extracts the file at fsPath inside imagePath to destPath (which
+// must live in the same directory as imagePath). It lets a test check that
+// e2fsprogs — not only fsforge's own reader — walks the metadata the same way.
+// debugfs reports most failures on stdout while still exiting 0, so callers must
+// check the extracted file rather than trust the exit status.
+func DebugfsDump(imagePath, fsPath, destPath string) (string, error) {
+	if host, err := exec.LookPath("debugfs"); err == nil {
+		out, err := exec.Command(host, "-R", "dump "+fsPath+" "+destPath, imagePath).CombinedOutput()
+		return string(out), err
+	}
+
+	runtime := containerRuntime()
+	if runtime == "" {
+		return "", ErrUnavailable
+	}
+	dir, err := filepath.Abs(filepath.Dir(imagePath))
+	if err != nil {
+		return "", err
+	}
+	if d, _ := filepath.Abs(filepath.Dir(destPath)); d != dir {
+		return "", fmt.Errorf("conformance: image and dest must share a directory")
+	}
+	script := fmt.Sprintf(
+		"command -v debugfs >/dev/null 2>&1 || apk add -q e2fsprogs-extra >/dev/null 2>&1 || apk add -q e2fsprogs >/dev/null 2>&1; "+
+			"debugfs -R 'dump %s /work/%s' /work/%s",
+		fsPath, filepath.Base(destPath), filepath.Base(imagePath))
+	cmd := exec.Command(runtime, "run", "--rm", "-v", dir+":/work:Z", e2fsprogsImage(), "sh", "-c", script)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
 func runTool(imagePath, tool string, args ...string) (string, error) {
 	if host, err := exec.LookPath(tool); err == nil {
 		out, err := exec.Command(host, append(args, imagePath)...).CombinedOutput()

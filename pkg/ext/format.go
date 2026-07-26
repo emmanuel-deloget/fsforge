@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 
 	"github.com/emmanuel-deloget/fsforge/pkg/alloc"
 	"github.com/emmanuel-deloget/fsforge/pkg/device"
@@ -87,6 +88,11 @@ func (e *Engine) Format(dev device.Device, p image.Params) (image.Image, error) 
 }
 
 var errTooManyInodes = errors.New("ext: not enough inodes for the tree")
+
+// errFileTooLarge guards i_size, which fsforge writes as a 32-bit value: going
+// past it would silently truncate. Files above 4 GiB need the large_file feature
+// (i_size_high), which is not implemented.
+var errFileTooLarge = errors.New("ext: file larger than 4 GiB (large_file is not supported)")
 
 // Finalize runs the deterministic layout pass: assign inode numbers, reserve
 // metadata, allocate and write data, then bitmaps, inode tables, descriptors
@@ -260,7 +266,7 @@ func (l *layouter) buildDir(n *image.Node, ino, parentIno uint32) error {
 		})
 	}
 	blocks := buildDirBlocks(entries, l.geo.blockSize)
-	dataBlocks, err := l.allocContiguous(uint64(len(blocks)))
+	dataBlocks, err := l.allocBlocks(uint64(len(blocks)))
 	if err != nil {
 		return err
 	}
@@ -280,8 +286,11 @@ func (l *layouter) buildFile(n *image.Node, ino uint32) error {
 	if n.Content != nil {
 		size = uint64(n.Content.Size())
 	}
+	if size > math.MaxUint32 {
+		return errFileTooLarge
+	}
 	nblocks := ceilDiv(size, uint64(l.geo.blockSize))
-	dataBlocks, err := l.allocContiguous(nblocks)
+	dataBlocks, err := l.allocBlocks(nblocks)
 	if err != nil {
 		return err
 	}
@@ -307,7 +316,7 @@ func (l *layouter) buildSymlink(n *image.Node, ino uint32) error {
 		return nil
 	}
 	nblocks := ceilDiv(uint64(len(target)), uint64(l.geo.blockSize))
-	dataBlocks, err := l.allocContiguous(nblocks)
+	dataBlocks, err := l.allocBlocks(nblocks)
 	if err != nil {
 		return err
 	}
@@ -353,17 +362,17 @@ func (l *layouter) newInode(n *image.Node, size uint32) *inode {
 func sectorsPerBlock(bs uint32) uint32 { return bs / 512 }
 
 // mapBlocks records the data blocks in the inode. With extents (ext4) it writes
-// an inline extent tree; otherwise it fills i_block with direct/indirect
-// pointers. It then sets i_blocks (data + metadata, in 512-byte sectors).
+// an extent tree; otherwise it fills i_block with direct/indirect pointers. It
+// then sets i_blocks (data + metadata, in 512-byte sectors).
 func (l *layouter) mapBlocks(in *inode, data []uint64) error {
 	if l.useExtents {
-		raw, err := buildExtentsInline(data)
+		raw, err := l.buildExtentTree(data)
 		if err != nil {
 			return err
 		}
 		in.blockRaw = raw
 		in.flags |= extentsFL
-		in.blocks = uint32(uint64(len(data)) * uint64(sectorsPerBlock(l.geo.blockSize)))
+		in.blocks = uint32((uint64(len(data)) + l.curMeta) * uint64(sectorsPerBlock(l.geo.blockSize)))
 		return nil
 	}
 	idx := 0
@@ -401,11 +410,10 @@ func (l *layouter) mapBlocks(in *inode, data []uint64) error {
 // buildIndirect allocates one indirect block at the given level and fills it,
 // consuming data blocks from data starting at *idx.
 func (l *layouter) buildIndirect(level int, data []uint64, idx *int) (uint32, error) {
-	blk, err := l.allocOne()
+	blk, err := l.allocMetaBlock()
 	if err != nil {
 		return 0, err
 	}
-	l.curMeta++
 	buf := make([]byte, l.geo.blockSize)
 	ppb := int(l.geo.blockSize / 4)
 	for i := 0; i < ppb && *idx < len(data); i++ {

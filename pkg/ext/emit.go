@@ -5,8 +5,13 @@ import (
 	"io"
 	"sort"
 
+	"github.com/emmanuel-deloget/fsforge/pkg/alloc"
 	"github.com/emmanuel-deloget/fsforge/pkg/image"
 )
+
+// writeChunkBytes bounds the staging buffer used to stream file contents onto
+// the device.
+const writeChunkBytes = 1 << 20
 
 // --- allocation wrappers that mirror usage so we can serialise bitmaps without
 // depending on the allocator's internals ---
@@ -31,20 +36,44 @@ func (l *layouter) allocOne() (uint64, error) {
 	return s, nil
 }
 
-// allocContiguous allocates n contiguous blocks and returns their numbers. n==0
-// returns an empty slice.
-func (l *layouter) allocContiguous(n uint64) ([]uint64, error) {
+// allocMetaBlock reserves one block for inode metadata — an indirect block or an
+// extent node — and counts it towards i_blocks.
+func (l *layouter) allocMetaBlock() (uint64, error) {
+	blk, err := l.allocOne()
+	if err != nil {
+		return 0, err
+	}
+	l.curMeta++
+	return blk, nil
+}
+
+// maxRun caps the length of a single allocation run. With extents one run maps
+// to one extent, which addresses at most extentMaxLen blocks; the indirect-block
+// scheme has no such limit.
+func (l *layouter) maxRun() uint64 {
+	if l.useExtents {
+		return extentMaxLen
+	}
+	return 0
+}
+
+// allocBlocks reserves n blocks and returns their numbers in logical order. They
+// are not necessarily contiguous: per-group metadata caps any free run at one
+// block group, so anything larger has to be chained out of several runs.
+func (l *layouter) allocBlocks(n uint64) ([]uint64, error) {
 	if n == 0 {
 		return nil, nil
 	}
-	start, err := l.al.Alloc(n)
+	runs, err := alloc.AllocRuns(l.al, n, l.maxRun())
 	if err != nil {
 		return nil, err
 	}
-	l.mark(start, n)
-	out := make([]uint64, n)
-	for i := range out {
-		out[i] = start + uint64(i)
+	out := make([]uint64, 0, n)
+	for _, r := range runs {
+		l.mark(r.Start, r.Len)
+		for i := uint64(0); i < r.Len; i++ {
+			out = append(out, r.Start+i)
+		}
 	}
 	return out, nil
 }
@@ -55,22 +84,33 @@ func (l *layouter) writeBlock(block uint64, data []byte) {
 	_, _ = l.dev.WriteAt(data, int64(block)*int64(l.geo.blockSize))
 }
 
+// writeContent streams src into blocks. Consecutive blocks are coalesced into a
+// single device write, so a large file costs a handful of writes per run instead
+// of one per block; the tail of the final block is zero-padded.
 func (l *layouter) writeContent(src interface {
 	io.ReaderAt
 	Size() int64
 }, blocks []uint64, size uint64) error {
 	bs := uint64(l.geo.blockSize)
-	for i, blk := range blocks {
-		off := uint64(i) * bs
-		n := bs
-		if off+n > size {
-			n = size - off
+	perWrite := min(max(writeChunkBytes/bs, 1), uint64(len(blocks)))
+	if perWrite == 0 {
+		return nil
+	}
+	buf := make([]byte, perWrite*bs)
+	for i := 0; i < len(blocks); {
+		j := i + 1
+		for j < len(blocks) && blocks[j] == blocks[j-1]+1 && uint64(j-i) < perWrite {
+			j++
 		}
-		buf := make([]byte, bs) // zero-padded tail
+		span := uint64(j-i) * bs
+		off := uint64(i) * bs
+		n := min(span, size-off)
 		if _, err := src.ReadAt(buf[:n], int64(off)); err != nil && err != io.EOF {
 			return err
 		}
-		l.writeBlock(blk, buf)
+		clear(buf[n:span])
+		l.writeBlock(blocks[i], buf[:span])
+		i = j
 	}
 	return nil
 }
