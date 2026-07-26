@@ -362,17 +362,17 @@ func (l *layouter) newInode(n *image.Node, size uint32) *inode {
 func sectorsPerBlock(bs uint32) uint32 { return bs / 512 }
 
 // mapBlocks records the data blocks in the inode. With extents (ext4) it writes
-// an inline extent tree; otherwise it fills i_block with direct/indirect
-// pointers. It then sets i_blocks (data + metadata, in 512-byte sectors).
+// an extent tree; otherwise it fills i_block with direct/indirect pointers. It
+// then sets i_blocks (data + metadata, in 512-byte sectors).
 func (l *layouter) mapBlocks(in *inode, data []uint64) error {
 	if l.useExtents {
-		raw, err := buildExtentsInline(data)
+		raw, err := l.buildExtentTree(data)
 		if err != nil {
 			return err
 		}
 		in.blockRaw = raw
 		in.flags |= extentsFL
-		in.blocks = uint32(uint64(len(data)) * uint64(sectorsPerBlock(l.geo.blockSize)))
+		in.blocks = uint32((uint64(len(data)) + l.curMeta) * uint64(sectorsPerBlock(l.geo.blockSize)))
 		return nil
 	}
 	idx := 0

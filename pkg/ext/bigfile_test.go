@@ -1,6 +1,8 @@
 package ext
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"io"
 	"testing"
 
@@ -56,6 +58,39 @@ func checkPattern(t *testing.T, src tree.Source, want int64) {
 	}
 }
 
+// inoByName resolves a root-level name to its inode number.
+func inoByName(t *testing.T, dev device.Device, name string) uint32 {
+	t.Helper()
+	r, err := newReader(dev)
+	if err != nil {
+		t.Fatalf("newReader: %v", err)
+	}
+	root, err := r.readInode(rootIno)
+	if err != nil {
+		t.Fatalf("readInode(root): %v", err)
+	}
+	blocks, err := r.blockList(root, uint64(root.size))
+	if err != nil {
+		t.Fatalf("blockList(root): %v", err)
+	}
+	var found uint32
+	for _, blk := range blocks {
+		buf, err := r.readBlock(blk)
+		if err != nil {
+			t.Fatalf("readBlock: %v", err)
+		}
+		parseDirBlock(buf, func(ino uint32, n string, _ byte) {
+			if n == name {
+				found = ino
+			}
+		})
+	}
+	if found == 0 {
+		t.Fatalf("%q not found in root", name)
+	}
+	return found
+}
+
 // buildBig lays out an image holding a single large file and returns the device.
 func buildBig(t *testing.T, e *Engine, devSize int64, bs uint32, fileSize int64) device.Device {
 	t.Helper()
@@ -106,6 +141,98 @@ func TestFileLargerThanOneBlockGroup(t *testing.T) {
 	}
 }
 
+// The extent tree must grow past the four entries that fit in i_block: a file
+// spread over more runs than that needs index nodes of its own.
+func TestExtentTreeSpillsToNodes(t *testing.T) {
+	const (
+		bs       = 1024
+		fileSize = 40 << 20 // ~5 groups, hence at least 5 extents
+		devSize  = int64(96) << 20
+	)
+	dev := buildBig(t, NewExt4(testDeps()), devSize, bs, fileSize)
+
+	r, err := newReader(dev)
+	if err != nil {
+		t.Fatalf("newReader: %v", err)
+	}
+	in, err := r.readInode(inoByName(t, dev, "big"))
+	if err != nil {
+		t.Fatalf("readInode: %v", err)
+	}
+	if in.flags&extentsFL == 0 {
+		t.Fatal("inode does not use extents")
+	}
+	if depth := binary.LittleEndian.Uint16(in.blockRaw[6:]); depth == 0 {
+		t.Fatalf("extent tree depth = 0, want an indexed tree for a %d-byte file", fileSize)
+	}
+	// i_blocks must account for the extent nodes on top of the data blocks.
+	data := ceilDiv(uint64(fileSize), bs)
+	if want := data * uint64(sectorsPerBlock(bs)); uint64(in.blocks) <= want {
+		t.Errorf("i_blocks = %d, want more than the %d data sectors", in.blocks, want)
+	}
+
+	opened, err := NewExt4(testDeps()).Open(dev)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	checkPattern(t, childByName(opened.(rootNoder).RootNode(), "big").Content, fileSize)
+}
+
+// buildExtentTree must round-trip through parseExtents at every depth, including
+// the deeply fragmented case where index nodes themselves need indexing.
+func TestExtentTreeRoundTrip(t *testing.T) {
+	const bs = 1024 // 84 entries per node, 4 inline: depth 2 past 336 extents
+	for _, tc := range []struct {
+		name      string
+		runs      int
+		wantDepth uint16
+	}{
+		{"inline", 3, 0},
+		{"one level", 50, 1},
+		{"two levels", 400, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dev := device.NewMem(8 << 20)
+			img, err := NewExt4(testDeps()).Format(dev, image.Params{BlockSize: bs})
+			if err != nil {
+				t.Fatalf("Format: %v", err)
+			}
+			l := img.(*ext2Image).newLayouter(dev)
+			// Every other block, so each data block is its own extent.
+			data := make([]uint64, tc.runs)
+			for i := range data {
+				data[i] = uint64(2*i + 100)
+			}
+			root, err := l.buildExtentTree(data)
+			if err != nil {
+				t.Fatalf("buildExtentTree: %v", err)
+			}
+			if got := binary.LittleEndian.Uint16(root[6:]); got != tc.wantDepth {
+				t.Errorf("depth = %d, want %d", got, tc.wantDepth)
+			}
+			if got := binary.LittleEndian.Uint16(root[4:]); got != inlineExtents {
+				t.Errorf("root eh_max = %d, want %d", got, inlineExtents)
+			}
+			got, err := parseExtents(root, func(b uint64) ([]byte, error) {
+				buf := make([]byte, bs)
+				_, err := dev.ReadAt(buf, int64(b)*bs)
+				return buf, err
+			})
+			if err != nil {
+				t.Fatalf("parseExtents: %v", err)
+			}
+			if len(got) != len(data) {
+				t.Fatalf("got %d blocks, want %d", len(got), len(data))
+			}
+			for i := range got {
+				if got[i] != data[i] {
+					t.Fatalf("block[%d] = %d, want %d", i, got[i], data[i])
+				}
+			}
+		})
+	}
+}
+
 // One extent addresses at most extentMaxLen blocks (ee_len is 16-bit), so a
 // longer physical run has to be cut into several leaves.
 func TestContiguousRunsSplitAtExtentMax(t *testing.T) {
@@ -141,5 +268,56 @@ func TestFileTooLarge(t *testing.T) {
 	}
 	if err := img.Finalize(); err != errFileTooLarge {
 		t.Fatalf("Finalize: got %v, want errFileTooLarge", err)
+	}
+}
+
+// A large file must survive an offline mutation unchanged, which exercises the
+// staged re-layout reading it back through its own extent tree.
+func TestLargeFileSurvivesMutation(t *testing.T) {
+	const (
+		bs       = 1024
+		fileSize = 12 << 20
+	)
+	dev := buildBig(t, NewExt4(testDeps()), 96<<20, bs, fileSize)
+
+	opened, err := NewExt4(testDeps()).Open(dev)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if _, err := opened.Root().Create("added.txt", tree.Bytes("mutated\n"), meta(0o644)); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := opened.Finalize(); err != nil {
+		t.Fatalf("Finalize (mutate): %v", err)
+	}
+
+	again, err := NewExt4(testDeps()).Open(dev)
+	if err != nil {
+		t.Fatalf("re-Open: %v", err)
+	}
+	root := again.(rootNoder).RootNode()
+	checkPattern(t, childByName(root, "big").Content, fileSize)
+	if got := string(readAll(t, childByName(root, "added.txt").Content)); got != "mutated\n" {
+		t.Errorf("added.txt = %q", got)
+	}
+}
+
+// Two builds of the same tree must produce byte-identical images, multi-run
+// allocation and extent nodes included.
+func TestLargeFileReproducible(t *testing.T) {
+	const (
+		bs       = 1024
+		fileSize = 40 << 20
+	)
+	sum := func() [32]byte {
+		dev := buildBig(t, NewExt4(testDeps()), 96<<20, bs, fileSize)
+		buf := make([]byte, dev.Size())
+		if _, err := dev.ReadAt(buf, 0); err != nil && err != io.EOF {
+			t.Fatalf("ReadAt: %v", err)
+		}
+		return sha256.Sum256(buf)
+	}
+	if a, b := sum(), sum(); a != b {
+		t.Fatalf("images differ: %x vs %x", a, b)
 	}
 }
