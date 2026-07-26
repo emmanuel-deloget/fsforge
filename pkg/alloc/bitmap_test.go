@@ -55,7 +55,7 @@ func TestBitmapFreeReuse(t *testing.T) {
 }
 
 func TestBitmapFragmentation(t *testing.T) {
-	b := NewBitmap(12) // fully carved into three 4-runs, no free tail
+	b := NewBitmap(12)  // fully carved into three 4-runs, no free tail
 	r0, _ := b.Alloc(4) // [0,4)
 	_, _ = b.Alloc(4)   // [4,8)
 	r2, _ := b.Alloc(4) // [8,12)
@@ -120,5 +120,30 @@ func TestBitmapFactory(t *testing.T) {
 	a := f.New(32)
 	if _, err := a.Alloc(1); err != nil {
 		t.Fatalf("factory allocator Alloc: %v", err)
+	}
+}
+
+// Freed blocks must come back into play so first-fit stays exact even with the
+// scan hint.
+func TestBitmapHintAfterFree(t *testing.T) {
+	b := NewBitmap(64)
+	_, _ = b.Alloc(32)
+	if err := b.Free(8, 4); err != nil {
+		t.Fatalf("Free: %v", err)
+	}
+	if got, err := b.Alloc(4); err != nil || got != 8 {
+		t.Fatalf("Alloc(4) after free = (%d, %v), want (8, nil)", got, err)
+	}
+}
+
+// The final word of the bitmap is partly out of range: those padding bits must
+// never be handed out.
+func TestBitmapPartialFinalWord(t *testing.T) {
+	b := NewBitmap(70) // 70 bits over two 64-bit words
+	if _, err := b.Alloc(70); err != nil {
+		t.Fatalf("Alloc(70): %v", err)
+	}
+	if _, err := b.Alloc(1); !errors.Is(err, ErrNoSpace) {
+		t.Fatalf("Alloc past the end: got %v, want ErrNoSpace", err)
 	}
 }
