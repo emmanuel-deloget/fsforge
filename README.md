@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/emmanuel-deloget/fsforge/actions/workflows/ci.yml/badge.svg)](https://github.com/emmanuel-deloget/fsforge/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/emmanuel-deloget/fsforge.svg)](https://pkg.go.dev/github.com/emmanuel-deloget/fsforge)
+[![Release](https://img.shields.io/github/v/release/emmanuel-deloget/fsforge)](https://github.com/emmanuel-deloget/fsforge/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **Build filesystem images in pure Go — zero dependencies, no root, no cgo, no
