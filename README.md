@@ -1,9 +1,14 @@
 # fsforge
 
+<img src="assets/icon.svg" alt="" width="88" align="right">
+
 [![CI](https://github.com/emmanuel-deloget/fsforge/actions/workflows/ci.yml/badge.svg)](https://github.com/emmanuel-deloget/fsforge/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/emmanuel-deloget/fsforge.svg)](https://pkg.go.dev/github.com/emmanuel-deloget/fsforge)
 [![Release](https://img.shields.io/github/v/release/emmanuel-deloget/fsforge)](https://github.com/emmanuel-deloget/fsforge/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+**[emmanueldeloget.com/fsforge](https://www.emmanueldeloget.com/fsforge/)** —
+what it builds, in fewer words than this page.
 
 **Build filesystem images in pure Go — zero dependencies, no root, no cgo, no
 shelling out, and reproducible by construction.**

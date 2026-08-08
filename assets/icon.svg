@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="fsforge">
+  <!-- The four allocated blocks of the mark, and only those: at 16 and 24
+       pixels the outlines of the five free ones turn the whole thing into a
+       chequerboard, while these four keep the shape the logo draws. The full
+       nine-block map is on emmanueldeloget.com/fsforge, where there is room
+       for it. -->
+  <rect width="32" height="32" rx="7.5" fill="#17110b" />
+  <g fill="#f2b077">
+    <rect x="3.75" y="3.75" width="7.5" height="7.5" rx="1.5" />
+    <rect x="12.25" y="3.75" width="7.5" height="7.5" rx="1.5" />
+    <rect x="20.75" y="12.25" width="7.5" height="7.5" rx="1.5" />
+    <rect x="3.75" y="20.75" width="7.5" height="7.5" rx="1.5" />
+  </g>
+</svg>
