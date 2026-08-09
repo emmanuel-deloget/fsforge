@@ -251,7 +251,9 @@ func (r *ureader) readDir(dir *image.Node, data []byte, seen map[uint32]*image.N
 			if err != nil {
 				return err
 			}
-			dir.Children = append(dir.Children, image.Entry{Name: name, Node: child})
+			if err := dir.AddChild(name, child); err != nil {
+				return err
+			}
 		}
 		off += fidLen
 	}

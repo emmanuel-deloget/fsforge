@@ -124,7 +124,17 @@ func (r *creader) addEntry(root *image.Node, h hdr, name string, bodyStart int64
 
 // link attaches node at comps within root, creating intermediate directories
 // and reconciling a placeholder directory created earlier for a deeper entry.
+//
+// Every component is validated first, including the intermediate ones handed to
+// childDir: an archive is untrusted input, and splitPath drops "." but not "..",
+// so "../../etc/passwd" would otherwise sink a directory literally named ".."
+// into the tree.
 func link(root *image.Node, comps []string, node *image.Node) error {
+	for _, c := range comps {
+		if err := image.ValidName(c); err != nil {
+			return err
+		}
+	}
 	dir := root
 	for _, c := range comps[:len(comps)-1] {
 		dir = childDir(dir, c)
@@ -143,8 +153,7 @@ func link(root *image.Node, comps []string, node *image.Node) error {
 			return nil
 		}
 	}
-	dir.Children = append(dir.Children, image.Entry{Name: leaf, Node: node})
-	return nil
+	return dir.AddChild(leaf, node)
 }
 
 // childDir returns the child directory named c under dir, creating a

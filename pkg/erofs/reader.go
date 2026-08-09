@@ -194,7 +194,9 @@ func (r *ereader) readDir(dir *image.Node, in dinodeR, nid uint64, seen map[uint
 			if err != nil {
 				return err
 			}
-			dir.Children = append(dir.Children, image.Entry{Name: name, Node: child})
+			if err := dir.AddChild(name, child); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

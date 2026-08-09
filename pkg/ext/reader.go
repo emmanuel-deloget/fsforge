@@ -250,7 +250,10 @@ func (r *reader) readDir(in *inode, n *image.Node, seen map[uint32]*image.Node) 
 				perr = e
 				return
 			}
-			n.Children = append(n.Children, image.Entry{Name: name, Node: child})
+			if e := n.AddChild(name, child); e != nil {
+				perr = e
+				return
+			}
 		})
 		if perr != nil {
 			return perr

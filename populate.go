@@ -1,6 +1,7 @@
 package fsforge
 
 import (
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -117,13 +118,42 @@ func graftOne(dstDir image.Dir, name string, n *image.Node, seen map[*image.Node
 // ExtractToDir writes the node tree to a host directory: regular files,
 // subdirectories and symlinks. Special files (devices, fifos, sockets) need
 // privileges and are skipped.
+//
+// Names are re-validated here even though the readers already reject bad ones
+// when they build the tree. This is the point where an image's bytes become
+// host paths, so it is the one place that must not trust its input: a caller
+// may hand over a tree assembled by hand, and the host's idea of a separator is
+// wider than the tree's on some platforms. Symlinks are created but never
+// followed — the extraction never writes *through* one, so a link pointing at
+// /etc is inert.
 func ExtractToDir(root *image.Node, dstDir string) error {
 	if err := os.MkdirAll(dstDir, 0o755); err != nil {
 		return err
 	}
-	for _, e := range sortedEntries(root) {
-		if err := extractOne(filepath.Join(dstDir, e.Name), e.Node); err != nil {
+	return extractChildren(root, dstDir)
+}
+
+func extractChildren(n *image.Node, dir string) error {
+	for _, e := range sortedEntries(n) {
+		if err := checkHostName(e.Name); err != nil {
 			return err
+		}
+		if err := extractOne(filepath.Join(dir, e.Name), e.Node); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkHostName applies the tree's naming rule plus the host's: on Windows a
+// backslash separates paths, and a name legal in a Linux image would escape.
+func checkHostName(name string) error {
+	if err := image.ValidName(name); err != nil {
+		return err
+	}
+	for i := 0; i < len(name); i++ {
+		if os.IsPathSeparator(name[i]) {
+			return fmt.Errorf("%w: %q", image.ErrBadName, name)
 		}
 	}
 	return nil
@@ -135,17 +165,16 @@ func extractOne(path string, n *image.Node) error {
 		if err := os.MkdirAll(path, n.Mode.Perm()); err != nil {
 			return err
 		}
-		for _, e := range sortedEntries(n) {
-			if err := extractOne(filepath.Join(path, e.Name), e.Node); err != nil {
-				return err
-			}
-		}
+		return extractChildren(n, path)
 	case n.Mode&fs.ModeSymlink != 0:
 		return os.Symlink(n.Link, path)
 	case n.Mode&(fs.ModeDevice|fs.ModeCharDevice|fs.ModeNamedPipe|fs.ModeSocket) != 0:
 		return nil // special files need privileges; skip on extract
 	default:
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, n.Mode.Perm())
+		// O_NOFOLLOW: if path is already a symlink — planted by an earlier entry,
+		// or sitting in the destination before we started — fail rather than write
+		// through it to whatever it names.
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY|oNoFollow, n.Mode.Perm())
 		if err != nil {
 			return err
 		}

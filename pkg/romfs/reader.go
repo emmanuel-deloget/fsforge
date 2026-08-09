@@ -111,7 +111,9 @@ func (r *rreader) readDir(dir *image.Node, off uint32, seen map[uint32]bool) err
 			if err != nil {
 				return err
 			}
-			dir.Children = append(dir.Children, image.Entry{Name: name, Node: child})
+			if err := dir.AddChild(name, child); err != nil {
+				return err
+			}
 		}
 		off = h.next & alignMask
 	}

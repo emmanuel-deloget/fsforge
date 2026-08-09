@@ -117,7 +117,9 @@ func (r *reader) readDir(dir *image.Node, extent, dataLen uint32) error {
 				node.Content = tree.Bytes(nil)
 			}
 		}
-		dir.Children = append(dir.Children, image.Entry{Name: name, Node: node})
+		if err := dir.AddChild(name, node); err != nil {
+			return err
+		}
 	}
 	return nil
 }

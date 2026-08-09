@@ -125,6 +125,14 @@ func (a *applier) applyEntry(hdr *tar.Header, tr io.Reader) error {
 	if name == "." || name == "/" || name == "" {
 		return nil
 	}
+	// path.Clean leaves a leading ".." in place, so every component has to be
+	// checked: a layer entry named "../../etc/passwd" would otherwise have
+	// ensureDir sink directories literally named ".." into the tree, which then
+	// walk out of the extraction root the moment ExtractToDir joins them onto a
+	// host path. Layers are untrusted input; a legitimate one never contains "..".
+	if err := checkPath(name); err != nil {
+		return err
+	}
 	dir, base := path.Split(name)
 	parent := a.ensureDir(strings.TrimSuffix(dir, "/"))
 
@@ -186,6 +194,22 @@ func (a *applier) applyEntry(hdr *tar.Header, tr io.Reader) error {
 		n.Mode = n.Mode &^ fs.ModeType // regular
 		n.Content = src
 		n.Nlink = 1
+	}
+	return nil
+}
+
+// checkPath validates every component of a slash-separated layer path against
+// the tree's naming rule. Empty components are skipped rather than rejected: a
+// leading "/" on an absolute archive name yields one, and ensureDir already
+// ignores it.
+func checkPath(p string) error {
+	for _, c := range strings.Split(p, "/") {
+		if c == "" {
+			continue
+		}
+		if err := image.ValidName(c); err != nil {
+			return err
+		}
 	}
 	return nil
 }
