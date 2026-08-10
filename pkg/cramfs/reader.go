@@ -89,7 +89,9 @@ func (r *creader) readDir(dir *image.Node, off, size uint32) error {
 				n.Content = tree.Bytes(nil)
 			}
 		}
-		dir.Children = append(dir.Children, image.Entry{Name: name, Node: n})
+		if err := dir.AddChild(name, n); err != nil {
+			return err
+		}
 	}
 	return nil
 }

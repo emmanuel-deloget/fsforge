@@ -238,6 +238,24 @@ The shape (see the module root, `pkg/image`, `pkg/tree`, `pkg/alloc`):
   Objects larger than the longest free run (per-group metadata caps a run at one
   block group) are chained out of several runs by `alloc.AllocRuns`.
 
+### 8.1 Entry names are a trust boundary
+
+`image.ValidName` holds the one rule every filesystem shares: an entry name is
+not empty, is neither `.` nor `..`, and contains no `/`. The editing surface
+(`image.Dir`) has always enforced it, but an engine's `Open` builds its tree
+*around* that surface, straight out of bytes it did not write — and so does the
+OCI flatten, out of tar headers.
+
+That makes names untrusted input. A dirent called `..` collides with the real
+`..` and corrupts whichever directory it lands in; worse, `ExtractToDir` later
+joins these names onto a host path, so the same entry walks out of the
+extraction root. `(*image.Node).AddChild` is therefore the only sanctioned way
+to attach a child while parsing: it validates, and a reader that appends to
+`Children` directly is a bug. `ExtractToDir` re-validates on its own account,
+because it is where an image's bytes become host paths — and it opens files
+`O_NOFOLLOW`, so a symlink already sitting in the destination cannot turn into
+a write to whatever it names.
+
 ## 9. References
 
 - ext4 disk layout — kernel docs `Documentation/filesystems/ext4/`.

@@ -3,7 +3,6 @@ package image
 import (
 	"errors"
 	"io/fs"
-	"strings"
 
 	"github.com/emmanuel-deloget/fsforge/pkg/tree"
 )
@@ -98,18 +97,12 @@ type fileHandle struct{ n *Node }
 func (f *fileHandle) inode() *tree.Inode { return &f.n.Inode }
 
 var (
-	errBadName  = errors.New("image: invalid name")
 	errNotDir   = errors.New("image: not a directory")
 	errNotEmpty = errors.New("image: directory not empty")
 	errBadLink  = errors.New("image: link target is not a regular file handle")
 )
 
-func checkName(name string) error {
-	if name == "" || name == "." || name == ".." || strings.ContainsRune(name, '/') {
-		return errBadName
-	}
-	return nil
-}
+func checkName(name string) error { return ValidName(name) }
 
 func (d *dirHandle) find(name string) *Entry {
 	for i := range d.n.Children {

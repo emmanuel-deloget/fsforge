@@ -98,7 +98,9 @@ func (r *squashReader) readDir(n *image.Node, startBlock uint32, offset, fileSiz
 			if err != nil {
 				return err
 			}
-			n.Children = append(n.Children, image.Entry{Name: name, Node: child})
+			if err := n.AddChild(name, child); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

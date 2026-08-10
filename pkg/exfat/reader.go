@@ -210,7 +210,9 @@ func (r *reader) parseFileSet(dir *image.Node, b []byte) (int, error) {
 	} else {
 		node.Content = tree.Bytes(nil)
 	}
-	dir.Children = append(dir.Children, image.Entry{Name: name, Node: node})
+	if err := dir.AddChild(name, node); err != nil {
+		return count, err
+	}
 	return count, nil
 }
 
