@@ -348,7 +348,10 @@ func goMode(m uint16) fs.FileMode {
 	case modeSymlink:
 		perm |= fs.ModeSymlink
 	case modeChrdev:
-		perm |= fs.ModeCharDevice
+		// ModeCharDevice only means "character" when ModeDevice is also set, per
+		// io/fs; on its own it describes no node kind at all. Every other reader
+		// sets both.
+		perm |= fs.ModeDevice | fs.ModeCharDevice
 	case modeBlkdev:
 		perm |= fs.ModeDevice
 	case modeFifo:

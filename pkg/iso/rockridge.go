@@ -137,14 +137,39 @@ func (l *layouter) writeSUA(b []byte, n *image.Node, name string, isRootDot bool
 }
 
 // slLen / writeSL handle the Rock Ridge symlink ("SL") entry component area.
-func slComponents(target string) []string {
-	return strings.Split(target, "/")
+//
+// Both derive from slComponents so the declared length cannot drift from the
+// bytes written. It did: the length counted the text of "." and "..", which the
+// encoder replaces with a flag and no content, so every relative symlink
+// declared two spare bytes per dot component. The reader then took the trailing
+// zeroes for one more, empty, component — "../elsewhere" came back as
+// "../elsewhere/".
+type slComponent struct {
+	flags   byte
+	content string
+}
+
+func slComponents(target string) []slComponent {
+	var out []slComponent
+	for _, c := range strings.Split(target, "/") {
+		switch c {
+		case "": // leading empty => absolute root component
+			out = append(out, slComponent{flags: 0x08}) // ROOT
+		case ".":
+			out = append(out, slComponent{flags: 0x02}) // CURRENT
+		case "..":
+			out = append(out, slComponent{flags: 0x04}) // PARENT
+		default:
+			out = append(out, slComponent{content: c})
+		}
+	}
+	return out
 }
 
 func slLen(target string) int {
 	n := 5 // SL header: sig(2)+len(1)+ver(1)+flags(1)
 	for _, c := range slComponents(target) {
-		n += 2 + len(c) // component flags(1)+len(1)+content
+		n += 2 + len(c.content) // component flags(1)+len(1)+content
 	}
 	return n
 }
@@ -154,21 +179,10 @@ func writeSL(b []byte, target string) int {
 	b[0], b[1], b[2], b[3], b[4] = 'S', 'L', byte(total), 1, 0
 	off := 5
 	for _, c := range slComponents(target) {
-		var flags byte
-		content := c
-		if c == "" { // leading empty => absolute root component
-			flags = 0x08 // ROOT
-		} else if c == "." {
-			flags = 0x02 // CURRENT
-			content = ""
-		} else if c == ".." {
-			flags = 0x04 // PARENT
-			content = ""
-		}
-		b[off] = flags
-		b[off+1] = byte(len(content))
-		copy(b[off+2:], content)
-		off += 2 + len(content)
+		b[off] = c.flags
+		b[off+1] = byte(len(c.content))
+		copy(b[off+2:], c.content)
+		off += 2 + len(c.content)
 	}
 	return total
 }

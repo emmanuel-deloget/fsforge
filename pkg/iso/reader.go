@@ -98,7 +98,7 @@ func (r *reader) readDir(dir *image.Node, extent, dataLen uint32) error {
 			name = stripVersion(string(id))
 		}
 		node := &image.Node{Nlink: 1}
-		node.Meta = tree.Meta{Mode: rr.mode(isDir), ModTime: rr.modTime}
+		node.Meta = tree.Meta{Mode: rr.mode(isDir), ModTime: rr.modTime, UID: rr.uid, GID: rr.gid}
 
 		switch {
 		case node.Mode.IsDir():
@@ -130,6 +130,7 @@ type rrInfo struct {
 	name      string
 	symlink   string
 	posixMode uint32
+	uid, gid  uint32
 	rdev      uint64
 	modTime   time.Time
 }
@@ -166,8 +167,20 @@ func parseSUSP(sua []byte) rrInfo {
 				name.Write(body[1:]) // body[0] is the NM flags byte
 			}
 		case "PX":
+			// PX is a run of both-endian 32-bit fields — mode, nlink, uid, gid —
+			// of which only the first was being read, so every image came back
+			// owned by root however it was written. nlink is deliberately left
+			// alone: the reader does not fold several records sharing an extent
+			// back into one node, so reporting a count above one would claim a
+			// sharing the tree does not have.
 			if len(body) >= 4 {
 				rr.posixMode = le.Uint32(body[0:])
+			}
+			if len(body) >= 20 {
+				rr.uid = le.Uint32(body[16:])
+			}
+			if len(body) >= 28 {
+				rr.gid = le.Uint32(body[24:])
 			}
 		case "SL":
 			rr.symlink += decodeSL(body)

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/emmanuel-deloget/fsforge/pkg/device"
 	"github.com/emmanuel-deloget/fsforge/pkg/image"
@@ -332,11 +333,11 @@ func decodeCS0(b []byte) string {
 	}
 	switch b[0] {
 	case 16:
-		var sb strings.Builder
+		u := make([]uint16, 0, (len(b)-1)/2)
 		for i := 1; i+1 < len(b); i += 2 {
-			sb.WriteRune(rune(uint16(b[i])<<8 | uint16(b[i+1])))
+			u = append(u, uint16(b[i])<<8|uint16(b[i+1]))
 		}
-		return sb.String()
+		return string(utf16.Decode(u)) // surrogate pairs, not raw code units
 	default: // 8 (Latin-1)
 		var sb strings.Builder
 		for _, c := range b[1:] {

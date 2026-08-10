@@ -1,6 +1,9 @@
 package udf
 
-import "time"
+import (
+	"time"
+	"unicode/utf16"
+)
 
 // crcTable is the CRC-ITU-T (CRC-CCITT, polynomial 0x1021) table UDF uses for
 // descriptor CRCs.
@@ -129,11 +132,15 @@ func cs0Bytes(s string) []byte {
 		}
 		return out
 	}
-	out := make([]byte, 1+2*len(runes))
+	// UTF-16BE, with surrogate pairs. Truncating a rune to 16 bits would rename
+	// the file: U+1F642 would land as U+F642 and come back as a different name
+	// entirely, with nothing in the image to show it had happened.
+	u := utf16.Encode(runes)
+	out := make([]byte, 1+2*len(u))
 	out[0] = 16
-	for i, r := range runes {
-		out[1+2*i] = byte(r >> 8)
-		out[2+2*i] = byte(r)
+	for i, c := range u {
+		out[1+2*i] = byte(c >> 8)
+		out[2+2*i] = byte(c)
 	}
 	return out
 }

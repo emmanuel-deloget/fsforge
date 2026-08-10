@@ -18,6 +18,10 @@ const (
 	inodeSize       = 12
 	blockSize       = 4096
 
+	// maxNameUnits is the widest namelen the inode's six-bit field can hold,
+	// counted in four-byte units: names run to 252 bytes, terminator included.
+	maxNameUnits = 63
+
 	// Feature flags (cramfs_fs.h). FSID v2 carries size/blocks/files; dirs are
 	// sorted; the root offset is stored shifted (>>2) like a real offset.
 	flagFSIDv2      = 0x0001

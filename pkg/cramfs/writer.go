@@ -3,6 +3,7 @@ package cramfs
 import (
 	"bytes"
 	"compress/zlib"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"io/fs"
@@ -158,12 +159,24 @@ func (w *cwriter) writeNode(n *image.Node) {
 
 // childInode builds the inline inode a parent stores for child named name.
 func (w *cwriter) childInode(name string, n *image.Node) cinode {
+	// namelen is six bits wide, counting four-byte units, so 63*4 = 252 bytes is
+	// the ceiling. Letting a longer name through wrapped it to zero and the
+	// entry read back with an empty name — the file was still in the image and
+	// no longer reachable by any name, with nothing to show for it.
+	padded := len(paddedName(name))
+	if padded/4 > maxNameUnits {
+		if w.err == nil {
+			w.err = fmt.Errorf("cramfs: name too long (%d bytes, max %d): %q",
+				len(name), maxNameUnits*4, name)
+		}
+		return cinode{}
+	}
 	return cinode{
 		mode:    modeToUnix(n.Mode),
 		uid:     n.UID,
 		gid:     n.GID,
 		size:    w.sizeField(n),
-		namelen: uint32(len(paddedName(name)) / 4),
+		namelen: uint32(padded / 4),
 		offset:  w.off[n] >> 2,
 	}
 }
