@@ -120,11 +120,7 @@ func (g *gen) leaf(dir image.Dir, depth int) error {
 
 	switch pick := g.rnd.Intn(10); {
 	case pick == 0 && g.o.Caps.Symlinks:
-		// A long target is its own case: Rock Ridge stores it inline in the
-		// directory record, so it competes with the name for the same 255 bytes.
-		target := []string{"../elsewhere", "/absolute/target", "sibling",
-			longName(g.o.Caps.MaxLink, 'l')}[g.rnd.Intn(4)]
-		return dir.Symlink(name, target, g.meta(fs.ModeSymlink|0o777))
+		return dir.Symlink(name, g.linkTarget(), g.meta(fs.ModeSymlink|0o777))
 	case pick == 1 && g.o.Caps.Devices:
 		kinds := []fs.FileMode{fs.ModeDevice | fs.ModeCharDevice, fs.ModeDevice, fs.ModeNamedPipe}
 		k := kinds[g.rnd.Intn(len(kinds))]
@@ -185,6 +181,31 @@ func (g *gen) hardLinks(root image.Dir) error {
 		}
 	}
 	return nil
+}
+
+// linkTarget picks a symlink target that fits the format's budget. The shapes
+// matter as much as the length: a relative target exercises the "." and ".."
+// components an encoder may store as flags rather than text, an absolute one
+// the empty leading component, and a long one the case where Rock Ridge stores
+// the target inline in the directory record and it competes with the name for
+// the same 255 bytes.
+func (g *gen) linkTarget() string {
+	candidates := []string{
+		"../elsewhere",
+		"/absolute/target",
+		"sibling",
+		longName(g.o.Caps.MaxLink, 'l'),
+	}
+	var fits []string
+	for _, c := range candidates {
+		if len(c) <= g.o.Caps.MaxLink {
+			fits = append(fits, c)
+		}
+	}
+	if len(fits) == 0 {
+		return longName(g.o.Caps.MaxLink, 'l') // MaxLink is at least one byte
+	}
+	return fits[g.rnd.Intn(len(fits))]
 }
 
 func (g *gen) meta(mode fs.FileMode) tree.Meta {
