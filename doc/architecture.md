@@ -256,6 +256,41 @@ because it is where an image's bytes become host paths — and it opens files
 `O_NOFOLLOW`, so a symlink already sitting in the destination cannot turn into
 a write to whatever it names.
 
+### 8.2 Differential testing
+
+`fsck` answers "is this image valid?". It does not answer "does this image hold
+what was put into it?", and the two come apart: a writer and a reader that share
+a misreading of a format agree with each other perfectly, and a valid image can
+still have lost every timestamp.
+
+`internal/fsgen` generates pseudo-random trees from a seed, shaped around the
+cases that break writers rather than around volume — names at the length limit,
+names that are not valid UTF-8, hard links, empty and multi-block files, device
+nodes, deep nesting, setuid bits, non-zero owners. `internal/manifest` flattens
+a tree — either an fsforge tree or a directory an external tool extracted — into
+sorted, comparable entries, and diffs two of them field by field.
+
+Comparison is field-selective, and that is the design rather than a compromise.
+Each engine declares what its format can hold (so the generator emits nothing it
+never claimed to support) and what a round trip must preserve. Everything absent
+from the second list is a stated loss with a reason attached, so the tests
+double as the honest capability table for the formats: cramfs stores no
+timestamps and an eight-bit gid, romfs no owner at all, UDF cannot hold a name
+that is not valid Unicode, squashfs's basic-file inode has no link count.
+
+Three levels run:
+
+- `TestDifferentialRoundTrip` (always) — write with fsforge, read back with
+  fsforge, over every engine that can `Open`. Catches a writer and its reader
+  disagreeing, which is most layout bugs.
+- `TestDifferentialExtract` (`-tags conformance`) — write with fsforge, extract
+  with the format's own tool, compare. Catches fsforge and the world disagreeing.
+- `TestDifferentialIngest` (`-tags conformance`) — build with the format's own
+  tool, read with fsforge, compare. Catches the reader alone being wrong.
+
+The last two run unprivileged, so they cannot observe owners or device nodes;
+the in-process level covers those.
+
 ## 9. References
 
 - ext4 disk layout — kernel docs `Documentation/filesystems/ext4/`.

@@ -86,7 +86,9 @@ func (r *creader) addEntry(root *image.Node, h hdr, name string, bodyStart int64
 			if h.filesize > 0 { // the body rides one of the links
 				existing.Content = &cpioFile{dev: r.dev, off: bodyStart, size: int64(h.filesize)}
 			}
-			existing.Nlink++
+			// Nlink is not incremented here: every link carries the same total in
+			// its own header, and the node already took it from the first one.
+			// Counting again turned three links into five.
 			return link(root, comps, existing)
 		}
 	}
