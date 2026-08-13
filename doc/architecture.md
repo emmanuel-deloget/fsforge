@@ -256,7 +256,30 @@ because it is where an image's bytes become host paths — and it opens files
 `O_NOFOLLOW`, so a symlink already sitting in the destination cannot turn into
 a write to whatever it names.
 
-### 8.2 Differential testing
+### 8.2 Extended attributes
+
+`tree.Meta.Xattrs` is filled by the OCI flatten from a layer's PAX records and
+written by ext2/ext4, squashfs and EROFS. Each format keeps them somewhere
+different, and each place has its own failure mode:
+
+- **ext** uses the space left inside a large inode when the attributes fit, and
+  a block named by `i_file_acl` when they do not — two security attributes
+  already exceed what an inode has spare. The superblock must advertise
+  `ext_attr` or e2fsck reports every block as a stray reference, and the block
+  carries hashes e2fsck recomputes.
+- **EROFS** stores them inline after the inode core, which means the *nid*
+  layout has to reserve the core plus the attribute area; `i_xattr_icount` is
+  what tells a reader where the next inode starts.
+- **squashfs** keeps them in tables of their own and has the inode point at a
+  record by index, so the sets are collected and numbered before any inode is
+  written. Nodes sharing a set share a record. Carrying an index requires the
+  *extended* inode types — but a directory entry still names the basic type, and
+  writing the extended one there aborts unsquashfs.
+
+FAT, exFAT, ISO, cpio, cramfs and romfs have nowhere to put them; the
+differential tests say so per engine rather than leaving it implicit.
+
+### 8.3 Differential testing
 
 `fsck` answers "is this image valid?". It does not answer "does this image hold
 what was put into it?", and the two come apart: a writer and a reader that share

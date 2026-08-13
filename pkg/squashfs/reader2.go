@@ -49,27 +49,43 @@ func (r *squashReader) readInode(ref uint64, seen map[uint64]*image.Node) (*imag
 		if err := r.readDir(n, startBlock, offset, fileSize, seen); err != nil {
 			return nil, err
 		}
-	case 8: // extended directory
-		n.Nlink = int(le.Uint32(d[body+4:]))
-		fileSize := int(le.Uint32(d[body+8:]))
-		startBlock := le.Uint32(d[body+12:])
-		offset := int(le.Uint16(d[body+16:]))
+	case typeExtDir:
+		// squashfs_ldir_inode: nlink, file_size, start_block, parent_inode,
+		// i_count, offset, xattr. The fields were being read one word late,
+		// which nothing caught because fsforge never wrote one.
+		n.Nlink = int(le.Uint32(d[body:]))
+		fileSize := int(le.Uint32(d[body+4:]))
+		startBlock := le.Uint32(d[body+8:])
+		offset := int(le.Uint16(d[body+18:]))
+		n.Xattrs = r.xattrsAt(le.Uint32(d[body+20:]))
 		if err := r.readDir(n, startBlock, offset, fileSize, seen); err != nil {
 			return nil, err
 		}
 	case typeFile:
 		n.Content = r.basicFile(d, body)
-	case 9: // extended file
+	case typeExtFile:
 		n.Content, n.Nlink = r.extFile(d, body)
-	case typeSymlink, 10:
+		n.Xattrs = r.xattrsAt(le.Uint32(d[body+36:]))
+	case typeSymlink, typeExtSymlink:
 		n.Nlink = int(le.Uint32(d[body:]))
 		tgtSize := int(le.Uint32(d[body+4:]))
 		n.Link = string(d[body+8 : body+8+tgtSize])
-	case typeChrdev, typeBlkdev, 11, 12:
+		if typ == typeExtSymlink {
+			// The symlink is the one extended inode whose xattr index sits after
+			// the variable-length part rather than before it.
+			n.Xattrs = r.xattrsAt(le.Uint32(d[body+8+tgtSize:]))
+		}
+	case typeChrdev, typeBlkdev, typeExtChrdev, typeExtBlkdev:
 		n.Nlink = int(le.Uint32(d[body:]))
 		n.Rdev = uint64(le.Uint32(d[body+4:]))
-	case typeFifo, typeSocket, 13, 14:
+		if typ == typeExtChrdev || typ == typeExtBlkdev {
+			n.Xattrs = r.xattrsAt(le.Uint32(d[body+8:]))
+		}
+	case typeFifo, typeSocket, typeExtFifo, typeExtSocket:
 		n.Nlink = int(le.Uint32(d[body:]))
+		if typ == typeExtFifo || typ == typeExtSocket {
+			n.Xattrs = r.xattrsAt(le.Uint32(d[body+4:]))
+		}
 	default:
 		return nil, fmt.Errorf("squashfs: unknown inode type %d", typ)
 	}

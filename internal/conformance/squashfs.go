@@ -17,6 +17,20 @@ func squashfsImage() string {
 	return "alpine"
 }
 
+// UnsquashfsXattrs is Unsquashfs with extended attributes left on. It is
+// separate because the plain helper deliberately passes -no-xattrs: restoring
+// security.* or trusted.* needs privileges the test suite does not have, and
+// unsquashfs treats failing to set one as fatal. Callers of this variant must
+// stick to user.* attributes.
+func UnsquashfsXattrs(imagePath, destPath string) (string, error) {
+	host, err := exec.LookPath("unsquashfs")
+	if err != nil {
+		return "", ErrUnavailable
+	}
+	out, err := exec.Command(host, "-d", destPath, imagePath).CombinedOutput()
+	return string(out), err
+}
+
 // Unsquashfs extracts imagePath into destPath (which must not already exist and
 // must live in the same directory as imagePath) and returns the combined
 // output. It uses a host unsquashfs if present, otherwise a container runtime.

@@ -49,12 +49,11 @@ var targets = []target{{
 }, {
 	fs: "squashfs",
 	caps: fsgen.Caps{Symlinks: true, Devices: true, HardLinks: true,
-		NonUTF8: true, Owners: true, SpecMode: true, Times: true},
-	keeps: manifest.All &^ manifest.Xattrs &^ manifest.Nlink,
-	why: "the superblock sets the no-xattrs flag; and a basic-file inode carries " +
-		"no nlink field, so a hard-linked regular file reads back with a count of " +
-		"1 — the sharing itself survives through the inode reference, which is " +
-		"what manifest.Links checks",
+		NonUTF8: true, Owners: true, SpecMode: true, Times: true, Xattrs: true},
+	keeps: manifest.All &^ manifest.Nlink,
+	why: "a basic-file inode carries no nlink field, so a hard-linked regular " +
+		"file reads back with a count of 1 — the sharing itself survives through " +
+		"the inode reference, which is what manifest.Links checks",
 }, {
 	fs: "erofs",
 	caps: fsgen.Caps{Symlinks: true, Devices: true, HardLinks: true,

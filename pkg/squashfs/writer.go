@@ -38,6 +38,12 @@ type swriter struct {
 	idIndex map[uint32]uint16
 	written map[*image.Node]childRes
 	nextIno uint32
+
+	// Extended attributes are numbered per distinct set before any inode is
+	// written, because an inode carries the number rather than the attributes.
+	xattrSets []xattrSet
+	xattrIDs  map[string]uint32      // set key to its number
+	xattrOf   map[*image.Node]uint32 // node to its set's number
 }
 
 func newSwriter(dev device.Device, comp compress.Compressor, blockSize uint32, clock image.Clock) *swriter {
@@ -51,6 +57,8 @@ func newSwriter(dev device.Device, comp compress.Compressor, blockSize uint32, c
 		dirs:      metaWriter{comp: comp},
 		idIndex:   make(map[uint32]uint16),
 		written:   make(map[*image.Node]childRes),
+		xattrIDs:  make(map[string]uint32),
+		xattrOf:   make(map[*image.Node]uint32),
 		nextIno:   1,
 	}
 }
@@ -157,46 +165,91 @@ func (w *swriter) writeFile(n *image.Node) childRes {
 		sizes = append(sizes, szField)
 	}
 
-	body := w.header(typeFile, n)
-	meta := make([]byte, 16)
-	le.PutUint32(meta[0:], start)
-	le.PutUint32(meta[4:], noFragment)
-	le.PutUint32(meta[8:], 0) // offset into fragment (unused)
-	le.PutUint32(meta[12:], uint32(size))
+	typ := uint16(typeFile)
+	var body, meta []byte
+	if w.xattrIndexOf(n) != xattrIDNone {
+		// The extended file inode widens start, size and a sparse count to 64
+		// bits and gains nlink, which the basic one has to infer.
+		typ = typeExtFile
+		body = w.header(typ, n)
+		meta = make([]byte, 40)
+		le.PutUint64(meta[0:], uint64(start))
+		le.PutUint64(meta[8:], uint64(size))
+		le.PutUint64(meta[16:], 0) // sparse
+		le.PutUint32(meta[24:], uint32(n.Nlink))
+		le.PutUint32(meta[28:], noFragment)
+		le.PutUint32(meta[32:], 0) // offset into fragment (unused)
+		le.PutUint32(meta[36:], w.xattrIndexOf(n))
+	} else {
+		body = w.header(typ, n)
+		meta = make([]byte, 16)
+		le.PutUint32(meta[0:], start)
+		le.PutUint32(meta[4:], noFragment)
+		le.PutUint32(meta[8:], 0) // offset into fragment (unused)
+		le.PutUint32(meta[12:], uint32(size))
+	}
 	body = append(body, meta...)
 	for _, s := range sizes {
 		var x [4]byte
 		le.PutUint32(x[:], s)
 		body = append(body, x[:]...)
 	}
-	return w.emitInode(body, n, typeFile)
+	return w.emitInode(body, n, typ)
 }
 
 func (w *swriter) writeSymlink(n *image.Node) childRes {
 	target := []byte(n.Link)
-	body := w.header(typeSymlink, n)
+	typ := uint16(typeSymlink)
+	if w.xattrIndexOf(n) != xattrIDNone {
+		typ = typeExtSymlink
+	}
+	body := w.header(typ, n)
 	meta := make([]byte, 8)
 	le.PutUint32(meta[0:], uint32(n.Nlink))
 	le.PutUint32(meta[4:], uint32(len(target)))
 	body = append(body, meta...)
 	body = append(body, target...)
-	return w.emitInode(body, n, typeSymlink)
+	if typ == typeExtSymlink {
+		// Alone among the extended inodes, the symlink's xattr index comes after
+		// the variable-length part rather than before it.
+		body = append(body, w.xattrField(n)...)
+	}
+	return w.emitInode(body, n, typ)
+}
+
+// xattrField is the four-byte index an extended inode carries.
+func (w *swriter) xattrField(n *image.Node) []byte {
+	var b [4]byte
+	le.PutUint32(b[0:], w.xattrIndexOf(n))
+	return b[:]
 }
 
 func (w *swriter) writeDevice(n *image.Node, typ uint16) childRes {
+	if w.xattrIndexOf(n) != xattrIDNone {
+		typ += typeExtDir - typeDir // basic type to its extended counterpart
+	}
 	body := w.header(typ, n)
 	meta := make([]byte, 8)
 	le.PutUint32(meta[0:], uint32(n.Nlink))
 	le.PutUint32(meta[4:], uint32(n.Rdev))
 	body = append(body, meta...)
+	if typ >= typeExtDir {
+		body = append(body, w.xattrField(n)...)
+	}
 	return w.emitInode(body, n, typ)
 }
 
 func (w *swriter) writeIPC(n *image.Node, typ uint16) childRes {
+	if w.xattrIndexOf(n) != xattrIDNone {
+		typ += typeExtDir - typeDir
+	}
 	body := w.header(typ, n)
 	meta := make([]byte, 4)
 	le.PutUint32(meta[0:], uint32(n.Nlink))
 	body = append(body, meta...)
+	if typ >= typeExtDir {
+		body = append(body, w.xattrField(n)...)
+	}
 	return w.emitInode(body, n, typ)
 }
 
@@ -231,15 +284,32 @@ func (w *swriter) writeDir(n *image.Node, parentIno uint32) (childRes, error) {
 	if parent == 0 { // root: parent is the conventional inodes_count+1
 		parent = n.Ino + 1
 	}
-	body := w.header(typeDir, n)
-	meta := make([]byte, 16)
-	le.PutUint32(meta[0:], dblock)
-	le.PutUint32(meta[4:], uint32(2+subdirs))
-	le.PutUint16(meta[8:], uint16(len(listing)+3))
-	le.PutUint16(meta[10:], doffset)
-	le.PutUint32(meta[12:], parent)
+	typ := uint16(typeDir)
+	var body, meta []byte
+	if w.xattrIndexOf(n) != xattrIDNone {
+		// The extended directory reorders the same fields and widens file_size,
+		// so it is written out rather than patched onto the basic layout.
+		typ = typeExtDir
+		body = w.header(typ, n)
+		meta = make([]byte, 24)
+		le.PutUint32(meta[0:], uint32(2+subdirs)) // nlink
+		le.PutUint32(meta[4:], uint32(len(listing)+3))
+		le.PutUint32(meta[8:], dblock)
+		le.PutUint32(meta[12:], parent)
+		le.PutUint16(meta[16:], 0) // i_count: no directory index
+		le.PutUint16(meta[18:], doffset)
+		le.PutUint32(meta[20:], w.xattrIndexOf(n))
+	} else {
+		body = w.header(typ, n)
+		meta = make([]byte, 16)
+		le.PutUint32(meta[0:], dblock)
+		le.PutUint32(meta[4:], uint32(2+subdirs))
+		le.PutUint16(meta[8:], uint16(len(listing)+3))
+		le.PutUint16(meta[10:], doffset)
+		le.PutUint32(meta[12:], parent)
+	}
 	body = append(body, meta...)
-	return w.emitInode(body, n, typeDir), nil
+	return w.emitInode(body, n, typ), nil
 }
 
 // buildListing serialises a directory's entries into squashfs directory headers,
@@ -267,7 +337,7 @@ func buildListing(entries []entry) []byte {
 			var eh [8]byte
 			le.PutUint16(eh[0:], e.res.offset)
 			le.PutUint16(eh[2:], uint16(int16(int64(e.res.ino)-int64(base))))
-			le.PutUint16(eh[4:], e.res.typ)
+			le.PutUint16(eh[4:], basicType(e.res.typ))
 			le.PutUint16(eh[6:], uint16(len(e.name)-1))
 			out = append(out, eh[:]...)
 			out = append(out, e.name...)
@@ -297,6 +367,18 @@ func (w *swriter) writeIDTable() (uint64, uint16) {
 	}
 	w.writeAt(idx)
 	return idTableStart, uint16(len(w.ids))
+}
+
+// basicType maps an extended inode type back to its basic counterpart. A
+// directory entry names the kind of thing it points at, not which of the two
+// encodings the inode uses — unsquashfs switches on this field and knows only
+// the basic types, so an 8 here aborts the whole extraction with "unknown inode
+// type" while the inode it refers to is perfectly well formed.
+func basicType(t uint16) uint16 {
+	if t >= typeExtDir {
+		return t - (typeExtDir - typeDir)
+	}
+	return t
 }
 
 func sortChildren(n *image.Node) []image.Entry {

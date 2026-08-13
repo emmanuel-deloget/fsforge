@@ -49,6 +49,9 @@ type squashReader struct {
 	dirMap    map[uint32]int
 	frags     []fragEntry
 	ids       []uint32
+	// xattrs holds one decoded attribute set per id, indexed by what an inode
+	// stores.
+	xattrs []map[string][]byte
 }
 
 func newSquashReader(dev device.Device) (*squashReader, error) {
@@ -82,6 +85,9 @@ func newSquashReader(dev device.Device) (*squashReader, error) {
 		return nil, err
 	}
 	if err := r.readIDTable(); err != nil {
+		return nil, err
+	}
+	if err := r.readXattrTables(); err != nil {
 		return nil, err
 	}
 	return r, nil
