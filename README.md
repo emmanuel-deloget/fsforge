@@ -65,6 +65,30 @@ nothing transitive to vendor, audit or keep up to date. The external tools in
 the table above are used **only by the conformance tests**, never by the library
 or CLI at runtime.
 
+## Ownership, modes and device nodes, without root
+
+A checkout is owned by whoever cloned it, holds no device nodes, and loses
+setuid bits on most CI filesystems. State those separately, in mtree(5) — the
+format BSD, Yocto and Buildroot already use:
+
+```bash
+fsforge spec -source ./rootfs -output rootfs.mtree   # describe what is there
+$EDITOR rootfs.mtree                                 # say what the image needs
+fsforge mkfs -type ext4 -source ./rootfs -spec rootfs.mtree \
+  -size 256M -output rootfs.img
+```
+
+```mtree
+/set uid=0 gid=0
+./bin/ping     type=file mode=4755
+./dev/console  type=char mode=0600 device=native,5,1
+./tmp          type=dir  mode=01777
+./var/run      type=link link=../run
+```
+
+The files come from the directory; the facts about them come from a file you
+keep in the repository. Nothing in that build needs privileges.
+
 ## Quickstart — library
 
 Build a reproducible ext4 image from a directory:

@@ -1,9 +1,11 @@
 package fsforge
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/emmanuel-deloget/fsforge/pkg/image"
+	"github.com/emmanuel-deloget/fsforge/pkg/mtree"
 )
 
 // Builder describes a single filesystem image to produce. The zero value is not
@@ -18,6 +20,7 @@ type Builder struct {
 	size      string
 	label     string
 	blockSize uint32
+	spec      string
 }
 
 // New starts a Builder for the given filesystem type (ext2, ext4, fat, exfat,
@@ -84,6 +87,40 @@ func (b *Builder) BuildFromDir(srcDir, outPath string) error {
 	})
 }
 
+// Spec sets an mtree(5) specification to lay over the tree after it is
+// populated. It is how a build states the ownership, modes and device nodes an
+// unprivileged checkout cannot hold: the files come from the directory, the
+// facts about them come from a file kept alongside.
+func (b *Builder) Spec(path string) *Builder {
+	b.spec = path
+	return b
+}
+
+// applySpec lays the builder's mtree specification over an image's tree. It
+// runs after the tree is populated and before it is finalized, which is the
+// only window where the facts a checkout could not carry can still be added.
+func (b *Builder) applySpec(img image.Image) (func() error, error) {
+	noop := func() error { return nil }
+	if b.spec == "" {
+		return noop, nil
+	}
+	rn, ok := img.(interface{ RootNode() *image.Node })
+	if !ok {
+		return noop, fmt.Errorf("fsforge: %s cannot take a spec (its image exposes no tree)", b.fstype)
+	}
+	f, err := os.Open(b.spec)
+	if err != nil {
+		return noop, err
+	}
+	defer f.Close()
+	sp, err := mtree.Parse(f)
+	if err != nil {
+		return noop, fmt.Errorf("%s: %w", b.spec, err)
+	}
+	closer, err := mtree.Apply(rn.RootNode(), sp)
+	return closer.Close, err
+}
+
 // BuildFromTree creates the image from an in-memory node tree (for example one
 // produced by another engine's Open or by oci.Flatten) and writes it to
 // outPath.
@@ -122,6 +159,11 @@ func (b *Builder) build(outPath string, contentBytes int64, fill func(image.Dir)
 	}
 	done, err := fill(img.Root())
 	defer done()
+	if err != nil {
+		return err
+	}
+	specDone, err := b.applySpec(img)
+	defer specDone()
 	if err != nil {
 		return err
 	}

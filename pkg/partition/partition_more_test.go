@@ -63,10 +63,10 @@ func TestFormatMBRTypesAndFill(t *testing.T) {
 
 	// mbrName covers every arm.
 	for typ, want := range map[byte]string{
-		MBRTypeEFI:      "esp",
-		MBRTypeFAT32LBA: "fat32",
+		MBRTypeEFI:       "esp",
+		MBRTypeFAT32LBA:  "fat32",
 		MBRTypeLinuxSwap: "swap",
-		MBRTypeLinux:    "linux",
+		MBRTypeLinux:     "linux",
 	} {
 		if got := mbrName(typ); got != want {
 			t.Errorf("mbrName(%#x) = %q, want %q", typ, got, want)

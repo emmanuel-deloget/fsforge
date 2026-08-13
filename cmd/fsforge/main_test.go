@@ -448,3 +448,92 @@ func TestReproducibleFlag(t *testing.T) {
 		t.Errorf("two reproducible builds differ (%d vs %d bytes)", len(a), len(b))
 	}
 }
+
+// TestSpecCommandAndFlag covers the pair that makes the workflow: describe a
+// directory, edit the description, build with it. They are tested together
+// because neither is much use alone.
+func TestSpecCommandAndFlag(t *testing.T) {
+	src := sampleDir(t)
+	spec := filepath.Join(t.TempDir(), "tree.mtree")
+
+	var code int
+	quiet(t, func() { code = run([]string{"spec", "-source", src, "-output", spec}) })
+	if code != 0 {
+		t.Fatalf("spec exited %d", code)
+	}
+	described, err := os.ReadFile(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(described), "./etc/hosts") {
+		t.Errorf("the generated spec does not describe the tree:\n%s", described)
+	}
+
+	// The edit a real user makes: own everything as root and add a device node.
+	edited := string(described) + "./dev type=dir mode=0755 uid=0 gid=0\n" +
+		"./dev/console type=char mode=0600 uid=0 gid=0 device=native,5,1\n"
+	if err := os.WriteFile(spec, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(t.TempDir(), "root.img")
+	quiet(t, func() {
+		code = run([]string{"mkfs", "-type", "ext4", "-source", src, "-output", out,
+			"-size", "16M", "-spec", spec, "-reproducible"})
+	})
+	if code != 0 {
+		t.Fatalf("mkfs -spec exited %d", code)
+	}
+	if st, err := os.Stat(out); err != nil || st.Size() == 0 {
+		t.Fatalf("no image was written: %v", err)
+	}
+
+	// spec with no -source, and mkfs pointing at a spec that is not there.
+	quiet(t, func() { code = run([]string{"spec"}) })
+	if code != 1 {
+		t.Errorf("spec without -source exited %d, want 1", code)
+	}
+	quiet(t, func() {
+		code = run([]string{"mkfs", "-type", "squashfs", "-source", src,
+			"-output", filepath.Join(t.TempDir(), "x"), "-spec", "/nonexistent.mtree"})
+	})
+	if code != 1 {
+		t.Errorf("mkfs with a missing spec exited %d, want 1", code)
+	}
+}
+
+// TestSpecToStdout covers the default output path, which is what makes the
+// command pipeable.
+func TestSpecToStdout(t *testing.T) {
+	src := sampleDir(t)
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	done := make(chan string)
+	go func() {
+		var sb strings.Builder
+		buf := make([]byte, 4096)
+		for {
+			n, err := r.Read(buf)
+			sb.Write(buf[:n])
+			if err != nil {
+				break
+			}
+		}
+		done <- sb.String()
+	}()
+	code := run([]string{"spec", "-source", src})
+	os.Stdout = old
+	w.Close()
+	got := <-done
+
+	if code != 0 {
+		t.Fatalf("spec exited %d", code)
+	}
+	if !strings.HasPrefix(got, "#mtree") {
+		t.Errorf("stdout does not start with the mtree marker:\n%s", got)
+	}
+}

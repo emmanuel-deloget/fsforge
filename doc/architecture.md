@@ -279,7 +279,32 @@ different, and each place has its own failure mode:
 FAT, exFAT, ISO, cpio, cramfs and romfs have nowhere to put them; the
 differential tests say so per engine rather than leaving it implicit.
 
-### 8.3 Differential testing
+### 8.3 Specifications: what a checkout cannot hold
+
+A build can produce file *contents*; it cannot produce the facts about them that
+an image needs. A checkout is owned by whoever cloned it, holds no device nodes,
+and loses a setuid bit on most CI filesystems. Without a way to state those out
+of band, "build a rootfs without root" stops halfway.
+
+`pkg/mtree` reads and writes mtree(5), the format BSD, Yocto and Buildroot
+already use — chosen over an invented one so the same file works with
+e2fsprogs' `mkfs` and with libarchive. A specification is *laid over* a
+populated tree rather than replacing it: an entry that names an existing node
+amends only the keywords it mentions, and one that names a node that is not
+there creates it, parents included. That ordering is what lets the files come
+from a directory while the facts about them come from a file kept in the
+repository.
+
+`Builder.Spec` applies one between populate and finalize, which is the only
+window where the tree is complete and still editable. `fsforge spec` writes one
+out for a directory, so the workflow is generate, edit, commit, build.
+
+The trap here is not the format but the tree: a directory added by a
+specification is another `..` pointing at its parent, and a parent whose link
+count does not say so is an image `fsck` rejects. `image.Dir` does that
+accounting; anything building a tree around it has to do it too.
+
+### 8.4 Differential testing
 
 `fsck` answers "is this image valid?". It does not answer "does this image hold
 what was put into it?", and the two come apart: a writer and a reader that share

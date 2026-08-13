@@ -88,8 +88,8 @@ func TestFlattenLayersWhiteoutsDevices(t *testing.T) {
 		{name: "opq/keep", typeflag: tar.TypeReg, mode: 0o644, body: "k"},
 	})
 	layer2 := makeLayer(t, []tarEntry{
-		{name: "etc/.wh.old", typeflag: tar.TypeReg},      // delete etc/old
-		{name: "opq/.wh..wh..opq", typeflag: tar.TypeReg}, // clear opq/*
+		{name: "etc/.wh.old", typeflag: tar.TypeReg},                        // delete etc/old
+		{name: "opq/.wh..wh..opq", typeflag: tar.TypeReg},                   // clear opq/*
 		{name: "bin/app", typeflag: tar.TypeReg, mode: 0o755, body: "app2"}, // overwrite
 	})
 
