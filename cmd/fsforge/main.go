@@ -7,32 +7,39 @@ import (
 	"os"
 )
 
-func main() {
-	if len(os.Args) < 2 {
+func main() { os.Exit(run(os.Args[1:])) }
+
+// run dispatches a command line and returns the process exit status: 0 on
+// success, 1 when the command failed, 2 when the arguments made no sense. It is
+// separate from main so the dispatch itself can be tested, os.Exit being
+// untestable by construction.
+func run(args []string) int {
+	if len(args) < 1 {
 		usage()
-		os.Exit(2)
+		return 2
 	}
 	var err error
-	switch os.Args[1] {
+	switch args[0] {
 	case "mkfs":
-		err = mkfs(os.Args[2:])
+		err = mkfs(args[1:])
 	case "convert":
-		err = convert(os.Args[2:])
+		err = convert(args[1:])
 	case "disk":
-		err = disk(os.Args[2:])
+		err = disk(args[1:])
 	case "oci-add-layer":
-		err = ociAddLayer(os.Args[2:])
+		err = ociAddLayer(args[1:])
 	case "-h", "--help", "help":
 		usage()
-		return
+		return 0
 	default:
 		usage()
-		os.Exit(2)
+		return 2
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "fsforge:", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func usage() {
