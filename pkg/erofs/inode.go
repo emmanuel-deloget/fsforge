@@ -20,24 +20,24 @@ const (
 )
 
 // dinode is the subset of an EROFS extended inode (erofs_inode_extended)
-// fsforge writes. i_format is always FLAT_PLAIN extended and i_xattr_icount is
-// always zero.
+// fsforge writes. i_format is always FLAT_PLAIN extended.
 type dinode struct {
-	mode  uint16
-	size  uint64
-	union uint32 // i_u: raw_blkaddr for FLAT_PLAIN data, or rdev for devices
-	ino   uint32
-	uid   uint32
-	gid   uint32
-	mtime uint64
-	nsec  uint32
-	nlink uint32
+	xattrICount uint16 // i_xattr_icount: size of the inline attribute area
+	mode        uint16
+	size        uint64
+	union       uint32 // i_u: raw_blkaddr for FLAT_PLAIN data, or rdev for devices
+	ino         uint32
+	uid         uint32
+	gid         uint32
+	mtime       uint64
+	nsec        uint32
+	nlink       uint32
 }
 
 func (in dinode) marshal() []byte {
 	b := make([]byte, inodeExtendedSize)
 	le.PutUint16(b[0:], formatExtendedFlatPlain)
-	// b[2:4] i_xattr_icount = 0
+	le.PutUint16(b[2:], in.xattrICount)
 	le.PutUint16(b[4:], in.mode)
 	// b[6:8] i_reserved = 0
 	le.PutUint64(b[8:], in.size)

@@ -58,9 +58,8 @@ var targets = []target{{
 }, {
 	fs: "erofs",
 	caps: fsgen.Caps{Symlinks: true, Devices: true, HardLinks: true,
-		NonUTF8: true, Owners: true, SpecMode: true, Times: true},
-	keeps: manifest.All &^ manifest.Xattrs,
-	why:   "i_xattr_icount is always zero",
+		NonUTF8: true, Owners: true, SpecMode: true, Times: true, Xattrs: true},
+	keeps: manifest.All,
 }, {
 	fs: "cpio",
 	caps: fsgen.Caps{Symlinks: true, Devices: true, HardLinks: true,

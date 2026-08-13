@@ -59,6 +59,9 @@ type dinodeR struct {
 	gid   uint32
 	mtime time.Time
 	data  *erofsData
+	// xattrArea is the inline attribute area that follows the inode core, kept
+	// raw so decoding stays in one place.
+	xattrArea []byte
 }
 
 // readInode parses the inode at nid.
@@ -99,6 +102,14 @@ func (r *ereader) readInode(nid uint64) (dinodeR, error) {
 		in.mtime = time.Unix(int64(r.sb.buildTime), int64(r.sb.buildNsec)).UTC()
 	}
 
+	if n := xattrIbodySize(icount); n > 0 {
+		area := make([]byte, n)
+		if _, err := r.dev.ReadAt(area, off+coreSize); err != nil && err != io.EOF {
+			return in, err
+		}
+		in.xattrArea = area
+	}
+
 	in.data = &erofsData{dev: r.dev, size: in.size}
 	switch layout {
 	case datalayoutFlatPlain:
@@ -123,7 +134,8 @@ func (r *ereader) readNode(nid, parentNid uint64, seen map[uint64]*image.Node) (
 		return nil, err
 	}
 	n := &image.Node{Nlink: int(in.nlink)}
-	n.Meta = tree.Meta{Mode: in.mode, UID: in.uid, GID: in.gid, ModTime: in.mtime}
+	n.Meta = tree.Meta{Mode: in.mode, UID: in.uid, GID: in.gid, ModTime: in.mtime,
+		Xattrs: decodeXattrs(in.xattrArea)}
 	seen[nid] = n
 
 	switch {
