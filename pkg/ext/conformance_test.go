@@ -5,8 +5,10 @@ package ext
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/emmanuel-deloget/fsforge/internal/conformance"
@@ -153,4 +155,75 @@ func runE2fsck(t *testing.T, e *Engine, size int64, mutate bool) {
 		t.Fatalf("e2fsck reported problems: %v\n%s", err, out)
 	}
 	t.Logf("e2fsck clean:\n%s", out)
+}
+
+// TestXattrConformance puts both attribute homes in front of e2fsck: a set
+// small enough to live in the space left inside the inode, and one large enough
+// to need a block of its own. The block is the interesting case — it carries
+// per-entry and per-block hashes that e2fsck recomputes, so a wrong hash shows
+// up here and nowhere else.
+func TestXattrConformance(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		xattrs map[string][]byte
+	}{{
+		name:   "inline",
+		xattrs: map[string][]byte{"security.capability": []byte("0123456789abcdefghij")},
+	}, {
+		name: "block",
+		xattrs: map[string][]byte{
+			"security.selinux":    []byte("system_u:object_r:etc_t:s0\x00"),
+			"security.capability": []byte("0123456789abcdefghij"),
+			"user.comment":        []byte(strings.Repeat("x", 120)),
+			"trusted.overlay.foo": []byte("bar"),
+		},
+	}, {
+		name: "empty value",
+		xattrs: map[string][]byte{
+			"user.empty": nil,
+			"user.one":   []byte("1"),
+		},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, err := os.CreateTemp(t.TempDir(), "fsforge-*.img")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			const size = 64 << 20
+			if err := f.Truncate(size); err != nil {
+				t.Fatal(err)
+			}
+
+			img, err := NewExt4(testDeps()).Format(device.NewFile(f, size),
+				image.Params{Label: "fsforge"})
+			if err != nil {
+				t.Fatalf("Format: %v", err)
+			}
+			m := meta(0o644)
+			m.Xattrs = tc.xattrs
+			if _, err := img.Root().Create("file", tree.Bytes("payload\n"), m); err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			dm := meta(fs.ModeDir | 0o755)
+			dm.Xattrs = tc.xattrs
+			if _, err := img.Root().Mkdir("dir", dm); err != nil {
+				t.Fatalf("Mkdir: %v", err)
+			}
+			if err := img.Finalize(); err != nil {
+				t.Fatalf("Finalize: %v", err)
+			}
+			if err := f.Sync(); err != nil {
+				t.Fatal(err)
+			}
+
+			out, err := conformance.E2fsck(f.Name())
+			if errors.Is(err, conformance.ErrUnavailable) {
+				t.Skip("e2fsprogs unavailable (no host binary or container runtime)")
+			}
+			if err != nil {
+				t.Fatalf("e2fsck reported problems: %v\n%s", err, out)
+			}
+		})
+	}
 }

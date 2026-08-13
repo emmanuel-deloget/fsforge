@@ -38,6 +38,7 @@ type Caps struct {
 	MaxGID    uint32 // cramfs stores gid in eight bits; 0 means no cap
 	SpecMode  bool   // setuid/setgid/sticky bits
 	Times     bool   // per-node mtimes rather than one fixed time
+	Xattrs    bool   // extended attributes
 }
 
 // Options controls one generation.
@@ -217,7 +218,37 @@ func (g *gen) meta(mode fs.FileMode) tree.Meta {
 		m.UID = cap32(uint32(g.rnd.Intn(3)*1000), g.o.Caps.MaxUID)
 		m.GID = cap32(uint32(g.rnd.Intn(3)*1000), g.o.Caps.MaxGID)
 	}
+	m.Xattrs = g.xattrs()
 	return m
+}
+
+// xattrs returns a plausible attribute set. The names are the ones that decide
+// whether an image is usable — a capability bit and an SELinux label are what a
+// rootfs actually carries — and the sizes straddle what fits in the space left
+// inside an inode against what forces a block of its own.
+func (g *gen) xattrs() map[string][]byte {
+	if !g.o.Caps.Xattrs {
+		return nil
+	}
+	switch g.rnd.Intn(4) {
+	case 0:
+		return nil
+	case 1:
+		return map[string][]byte{
+			"security.capability": g.bytes(20),
+		}
+	case 2:
+		return map[string][]byte{
+			"security.selinux": []byte("system_u:object_r:etc_t:s0\x00"),
+			"user.comment":     g.bytes(1 + g.rnd.Intn(30)),
+		}
+	default:
+		return map[string][]byte{
+			"user.a":              g.bytes(1),
+			"user.empty":          nil,
+			"trusted.overlay.foo": g.bytes(8),
+		}
+	}
 }
 
 // cap32 keeps an id inside what the format's field can hold, so a diff reports
