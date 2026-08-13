@@ -24,6 +24,8 @@ type ewriter struct {
 	nextOff  int64                  // metadata byte cursor, for nid assignment
 	inoCount uint32
 
+	xattrSizes map[*image.Node]int // inline attribute area per node
+
 	dataStart  uint32 // first data block
 	dataCursor uint32 // next free data block
 
@@ -32,11 +34,12 @@ type ewriter struct {
 
 func newEwriter(dev device.Device, clock image.Clock) *ewriter {
 	return &ewriter{
-		dev:     dev,
-		clock:   clock,
-		nids:    make(map[*image.Node]uint64),
-		laid:    make(map[*image.Node]bool),
-		nextOff: align(superOffset+superSize, inodeExtendedSize), // 1152
+		dev:        dev,
+		clock:      clock,
+		nids:       make(map[*image.Node]uint64),
+		xattrSizes: make(map[*image.Node]int),
+		laid:       make(map[*image.Node]bool),
+		nextOff:    align(superOffset+superSize, inodeExtendedSize), // 1152
 	}
 }
 
@@ -44,16 +47,25 @@ func newEwriter(dev device.Device, clock image.Clock) *ewriter {
 func align(v, a int64) int64 { return (v + a - 1) &^ (a - 1) }
 
 // assignNids numbers every unique node pre-order (sorted children) so a
-// directory's dirents can reference children written later. Extended inodes are
-// 64 bytes; starting 64-aligned in a 4 KiB block, none ever straddle a block.
+// directory's dirents can reference children written later.
+//
+// An inode occupies its 64-byte core plus whatever its inline attributes need,
+// rounded to a nid slot, because the attribute area sits immediately after the
+// core and would otherwise land on the next inode. The core itself must not
+// straddle a 4 KiB block, so a node whose core would cross one is pushed to the
+// start of the next block.
 func (w *ewriter) assignNids(n *image.Node) {
 	if _, ok := w.nids[n]; ok {
 		return
 	}
 	w.inoCount++
 	n.Ino = w.inoCount
+
+	if w.nextOff%blockSize > blockSize-inodeExtendedSize {
+		w.nextOff = align(w.nextOff, blockSize)
+	}
 	w.nids[n] = uint64(w.nextOff) / nidSlot
-	w.nextOff += inodeExtendedSize
+	w.nextOff += align(int64(inodeExtendedSize+w.xattrSize(n)), nidSlot)
 	if n.IsDir() {
 		for _, e := range sortChildren(n) {
 			w.assignNids(e.Node)
@@ -168,23 +180,49 @@ func (w *ewriter) writeBlocks(data []byte) {
 	}
 }
 
+// xattrSize is the inline attribute area a node needs, memoised so the layout
+// pass and the write pass cannot disagree about where the next inode starts.
+func (w *ewriter) xattrSize(n *image.Node) int {
+	if len(n.Xattrs) == 0 {
+		return 0
+	}
+	if size, ok := w.xattrSizes[n]; ok {
+		return size
+	}
+	size := xattrInlineSize(sortedXattrs(n.Xattrs))
+	w.xattrSizes[n] = size
+	return size
+}
+
 func (w *ewriter) writeInode(n *image.Node, size int64, union uint32) {
 	mt := n.ModTime
 	if mt.IsZero() {
 		mt = w.clock.Now()
 	}
 	in := dinode{
-		mode:  modeToUnix(n.Mode),
-		size:  uint64(size),
-		union: union,
-		ino:   n.Ino,
-		uid:   n.UID,
-		gid:   n.GID,
-		mtime: uint64(mt.Unix()),
-		nsec:  uint32(mt.Nanosecond()),
-		nlink: uint32(n.Nlink),
+		xattrICount: xattrICount(w.xattrSize(n)),
+		mode:        modeToUnix(n.Mode),
+		size:        uint64(size),
+		union:       union,
+		ino:         n.Ino,
+		uid:         n.UID,
+		gid:         n.GID,
+		mtime:       uint64(mt.Unix()),
+		nsec:        uint32(mt.Nanosecond()),
+		nlink:       uint32(n.Nlink),
 	}
-	w.writeAt(in.marshal(), int64(w.nids[n])*nidSlot)
+	base := int64(w.nids[n]) * nidSlot
+	w.writeAt(in.marshal(), base)
+	if len(n.Xattrs) > 0 {
+		area, err := encodeXattrs(sortedXattrs(n.Xattrs))
+		if err != nil {
+			if w.err == nil {
+				w.err = err
+			}
+			return
+		}
+		w.writeAt(area, base+inodeExtendedSize)
+	}
 }
 
 func (w *ewriter) writeAt(p []byte, off int64) {

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/emmanuel-deloget/fsforge/internal/conformance"
@@ -155,5 +156,86 @@ func TestReadMkfsErofs(t *testing.T) {
 	w := find(root, "wide")
 	if w == nil || len(w.Children) != 300 {
 		t.Fatalf("wide dir: got %d children", len(w.Children))
+	}
+}
+
+// TestXattrConformance puts inline extended attributes in front of the real
+// fsck.erofs. The structural risk is the inode layout rather than the entries
+// themselves: the attribute area sits between one inode core and the next, so a
+// miscounted i_xattr_icount makes fsck read the following inode from the middle
+// of an attribute.
+func TestXattrConformance(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		xattrs map[string][]byte
+	}{{
+		name:   "one small",
+		xattrs: map[string][]byte{"security.capability": []byte("0123456789abcdefghij")},
+	}, {
+		name: "several",
+		xattrs: map[string][]byte{
+			"security.selinux":    []byte("system_u:object_r:etc_t:s0\x00"),
+			"security.capability": []byte("0123456789abcdefghij"),
+			"user.comment":        []byte(strings.Repeat("x", 200)),
+			"trusted.overlay.foo": []byte("bar"),
+		},
+	}, {
+		name:   "empty value",
+		xattrs: map[string][]byte{"user.empty": nil, "user.one": []byte("1")},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			imgPath := filepath.Join(tmp, "xattr.erofs")
+
+			dev := device.NewMem(16 << 20)
+			img, err := New(testDeps()).Format(dev, image.Params{Label: "fsforge"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := img.Root()
+			// Attributes on several node kinds, and on more than one inode, so a
+			// layout error shows up as a misread neighbour.
+			m := meta(0o644)
+			m.Xattrs = tc.xattrs
+			for _, name := range []string{"a", "b", "c"} {
+				if _, err := root.Create(name, tree.Bytes("payload\n"), m); err != nil {
+					t.Fatal(err)
+				}
+			}
+			dm := meta(fs.ModeDir | 0o755)
+			dm.Xattrs = tc.xattrs
+			sub, err := root.Mkdir("dir", dm)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := sub.Create("nested", tree.Bytes("n"), m); err != nil {
+				t.Fatal(err)
+			}
+			sm := meta(fs.ModeSymlink | 0o777)
+			sm.Xattrs = tc.xattrs
+			if err := root.Symlink("link", "a", sm); err != nil {
+				t.Fatal(err)
+			}
+			if err := img.Finalize(); err != nil {
+				t.Fatal(err)
+			}
+
+			b := dev.Bytes()
+			sb, err := parseSuperblock(b[superOffset : superOffset+superSize])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(imgPath, b[:int(sb.blocks)*blockSize], 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			out, err := conformance.FsckErofs(imgPath)
+			if errors.Is(err, conformance.ErrUnavailable) {
+				t.Skip("fsck.erofs unavailable (no host binary or container runtime)")
+			}
+			if err != nil {
+				t.Fatalf("fsck.erofs reported problems: %v\n%s", err, out)
+			}
+		})
 	}
 }
