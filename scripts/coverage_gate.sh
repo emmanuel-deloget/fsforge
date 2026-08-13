@@ -2,9 +2,9 @@
 #
 # coverage_gate.sh — enforce a per-package unit-test coverage floor.
 #
-# Gated packages: the root facade, every pkg/*, and internal/binio. The CLI
-# (cmd/*) is intentionally not gated, and internal/conformance only builds under
-# the 'conformance' tag, so both are excluded.
+# Gated packages: the root facade, every pkg/*, cmd/* and the internal helpers.
+# internal/conformance is excluded because it only builds under the
+# 'conformance' tag, so it has no unit-test coverage to measure.
 #
 # Usage: scripts/coverage_gate.sh [floor]
 set -euo pipefail
@@ -13,7 +13,7 @@ FLOOR="${1:-80}"
 
 cd "$(dirname "$0")/.."
 
-mapfile -t PKGS < <(go list ./... | grep -vE '/cmd(/|$)|/internal/conformance$')
+mapfile -t PKGS < <(go list ./... | grep -vE '/internal/conformance$')
 
 echo "Coverage gate: floor ${FLOOR}% per package"
 echo
