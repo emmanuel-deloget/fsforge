@@ -135,6 +135,9 @@ type layouter struct {
 	useExtents   bool
 	featIncompat uint32
 	featRoCompat uint32
+	// usesXattrs is set when any node stores extended attributes, so the
+	// superblock advertises the feature only on images that carry them.
+	usesXattrs bool
 
 	al       alloc.Allocator
 	used     []bool
@@ -244,7 +247,9 @@ func (l *layouter) buildNode(n *image.Node, parentIno uint32) error {
 			return err
 		}
 	case n.Mode&(fs.ModeDevice|fs.ModeCharDevice|fs.ModeNamedPipe|fs.ModeSocket) != 0:
-		l.buildSpecial(n, ino)
+		if err := l.buildSpecial(n, ino); err != nil {
+			return err
+		}
 	default:
 		if err := l.buildFile(n, ino); err != nil {
 			return err
@@ -273,7 +278,10 @@ func (l *layouter) buildDir(n *image.Node, ino, parentIno uint32) error {
 	for i, b := range blocks {
 		l.writeBlock(dataBlocks[i], b)
 	}
-	in := l.newInode(n, uint32(len(blocks))*l.geo.blockSize)
+	in, err := l.newInode(n, uint32(len(blocks))*l.geo.blockSize)
+	if err != nil {
+		return err
+	}
 	if err := l.mapBlocks(in, dataBlocks); err != nil {
 		return err
 	}
@@ -297,7 +305,10 @@ func (l *layouter) buildFile(n *image.Node, ino uint32) error {
 	if err := l.writeContent(n.Content, dataBlocks, size); err != nil {
 		return err
 	}
-	in := l.newInode(n, uint32(size))
+	in, err := l.newInode(n, uint32(size))
+	if err != nil {
+		return err
+	}
 	if err := l.mapBlocks(in, dataBlocks); err != nil {
 		return err
 	}
@@ -307,7 +318,10 @@ func (l *layouter) buildFile(n *image.Node, ino uint32) error {
 
 func (l *layouter) buildSymlink(n *image.Node, ino uint32) error {
 	target := []byte(n.Link)
-	in := l.newInode(n, uint32(len(target)))
+	in, err := l.newInode(n, uint32(len(target)))
+	if err != nil {
+		return err
+	}
 	if len(target) < fastSymlinkMax {
 		raw := make([]byte, totalIBlocks*4)
 		copy(raw, target)
@@ -330,17 +344,21 @@ func (l *layouter) buildSymlink(n *image.Node, ino uint32) error {
 	return nil
 }
 
-func (l *layouter) buildSpecial(n *image.Node, ino uint32) {
-	in := l.newInode(n, 0)
+func (l *layouter) buildSpecial(n *image.Node, ino uint32) error {
+	in, err := l.newInode(n, 0)
+	if err != nil {
+		return err
+	}
 	if n.Mode&(fs.ModeDevice|fs.ModeCharDevice) != 0 {
 		in.block[0] = uint32(n.Rdev) // old-style device number
 	}
 	l.inodes[ino] = in
+	return nil
 }
 
 // newInode builds the common inode fields. curMeta is reset so mapBlocks can
 // accumulate indirect-block counts for i_blocks.
-func (l *layouter) newInode(n *image.Node, size uint32) *inode {
+func (l *layouter) newInode(n *image.Node, size uint32) (*inode, error) {
 	l.curMeta = 0
 	t := uint32(n.ModTime.Unix())
 	in := &inode{
@@ -356,7 +374,44 @@ func (l *layouter) newInode(n *image.Node, size uint32) *inode {
 	if l.geo.inodeSize > goodOldInodeSize {
 		in.extra = extraISize
 	}
-	return in
+	if err := l.placeXattrs(in, n); err != nil {
+		return nil, err
+	}
+	return in, nil
+}
+
+// placeXattrs stores a node's extended attributes, in the inode when they fit
+// there and in a block of their own when they do not. The inode is preferred
+// because it costs nothing: the space past i_extra_isize is already on disk.
+func (l *layouter) placeXattrs(in *inode, n *image.Node) error {
+	if len(n.Xattrs) == 0 {
+		return nil
+	}
+	l.usesXattrs = true
+	entries := sortedXattrs(n.Xattrs)
+
+	if in.extra > 0 {
+		space := int(l.geo.inodeSize) - goodOldInodeSize - int(in.extra)
+		if body, ok := encodeXattrIbody(entries, space); ok {
+			in.xattrIbody = body
+			return nil
+		}
+	}
+
+	block, err := encodeXattrBlock(entries, int(l.geo.blockSize))
+	if err != nil {
+		return err
+	}
+	blocks, err := l.allocBlocks(1)
+	if err != nil {
+		return err
+	}
+	l.writeBlock(blocks[0], block)
+	in.fileACL = uint32(blocks[0])
+	// The attribute block counts towards i_blocks like any other.
+	in.eaSectors = sectorsPerBlock(l.geo.blockSize)
+	in.blocks += in.eaSectors
+	return nil
 }
 
 func sectorsPerBlock(bs uint32) uint32 { return bs / 512 }
@@ -372,7 +427,7 @@ func (l *layouter) mapBlocks(in *inode, data []uint64) error {
 		}
 		in.blockRaw = raw
 		in.flags |= extentsFL
-		in.blocks = uint32((uint64(len(data)) + l.curMeta) * uint64(sectorsPerBlock(l.geo.blockSize)))
+		in.blocks = uint32((uint64(len(data))+l.curMeta)*uint64(sectorsPerBlock(l.geo.blockSize))) + in.eaSectors
 		return nil
 	}
 	idx := 0
@@ -403,7 +458,7 @@ func (l *layouter) mapBlocks(in *inode, data []uint64) error {
 	if idx < len(data) {
 		return fmt.Errorf("ext: file exceeds maximum size (%d blocks)", len(data))
 	}
-	in.blocks = uint32((uint64(len(data)) + l.curMeta) * uint64(sectorsPerBlock(l.geo.blockSize)))
+	in.blocks = uint32((uint64(len(data))+l.curMeta)*uint64(sectorsPerBlock(l.geo.blockSize))) + in.eaSectors
 	return nil
 }
 

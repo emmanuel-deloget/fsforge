@@ -183,6 +183,28 @@ func (r *reader) readIndirect(blk uint32, level int, need uint64, out *[]uint64)
 	return nil
 }
 
+// readXattrs collects a node's extended attributes from both places they can
+// live: the leftover space inside the inode, and the block i_file_acl names.
+// An inode may use either, so both are consulted and merged.
+func (r *reader) readXattrs(in *inode) (map[string][]byte, error) {
+	out := decodeXattrIbody(in.xattrIbody)
+	if in.fileACL == 0 {
+		return out, nil
+	}
+	block := make([]byte, r.bs)
+	if _, err := r.dev.ReadAt(block, int64(in.fileACL)*int64(r.bs)); err != nil && err != io.EOF {
+		return nil, err
+	}
+	fromBlock := decodeXattrBlock(block)
+	if out == nil {
+		return fromBlock, nil
+	}
+	for k, v := range fromBlock {
+		out[k] = v
+	}
+	return out, nil
+}
+
 // readNode builds the agnostic node for ino, sharing nodes across hard links.
 func (r *reader) readNode(ino uint32, seen map[uint32]*image.Node) (*image.Node, error) {
 	if n, ok := seen[ino]; ok {
@@ -194,12 +216,17 @@ func (r *reader) readNode(ino uint32, seen map[uint32]*image.Node) (*image.Node,
 	}
 	mode := goMode(in.mode)
 	t := time.Unix(int64(in.mtime), 0).UTC()
+	xattrs, err := r.readXattrs(&in)
+	if err != nil {
+		return nil, err
+	}
 	n := &image.Node{
 		Inode: tree.Inode{Meta: tree.Meta{
 			Mode:    mode,
 			UID:     uint32(in.uid),
 			GID:     uint32(in.gid),
 			ModTime: t,
+			Xattrs:  xattrs,
 		}},
 		Nlink: int(in.linksCount),
 	}
@@ -263,7 +290,17 @@ func (r *reader) readDir(in *inode, n *image.Node, seen map[uint32]*image.Node) 
 }
 
 func (r *reader) readSymlink(in *inode) (string, error) {
-	if in.blocks == 0 { // fast symlink stored in the i_block area
+	// A fast symlink keeps its target in the i_block area and owns no data
+	// blocks. The test is i_blocks minus whatever an attribute block costs —
+	// which is what ext4_inode_is_fast_symlink does, and for good reason: a
+	// symlink carrying extended attributes has a non-zero i_blocks while its
+	// target is still sitting in i_block, and reading those bytes as block
+	// numbers returns nothing that was ever there.
+	eaBlocks := uint32(0)
+	if in.fileACL != 0 {
+		eaBlocks = uint32(r.bs) >> 9
+	}
+	if in.blocks <= eaBlocks { // fast symlink stored in the i_block area
 		raw := in.blockRaw
 		if raw == nil {
 			raw = make([]byte, totalIBlocks*4)

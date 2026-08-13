@@ -235,6 +235,9 @@ func (l *layouter) writeDescriptorsAndSuperblocks() error {
 		featureIncompat: l.featIncompat,
 		featureROCompat: l.featRoCompat,
 	}
+	if l.usesXattrs {
+		sb.featureCompat |= featCompatExtAttr
+	}
 	if g.inodeSize > goodOldInodeSize {
 		sb.minExtraIsize = extraISize
 		sb.wantExtraIsize = extraISize

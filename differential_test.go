@@ -37,16 +37,14 @@ type target struct {
 var targets = []target{{
 	fs: "ext2",
 	caps: fsgen.Caps{Symlinks: true, Devices: true, HardLinks: true,
-		NonUTF8: true, Owners: true, SpecMode: true, Times: true},
-	keeps:  manifest.All &^ manifest.Xattrs,
-	why:    "xattrs are not written yet",
+		NonUTF8: true, Owners: true, SpecMode: true, Times: true, Xattrs: true},
+	keeps:  manifest.All,
 	minted: []string{"lost+found"},
 }, {
 	fs: "ext4",
 	caps: fsgen.Caps{Symlinks: true, Devices: true, HardLinks: true,
-		NonUTF8: true, Owners: true, SpecMode: true, Times: true},
-	keeps:  manifest.All &^ manifest.Xattrs,
-	why:    "xattrs are not written yet",
+		NonUTF8: true, Owners: true, SpecMode: true, Times: true, Xattrs: true},
+	keeps:  manifest.All,
 	minted: []string{"lost+found"},
 }, {
 	fs: "squashfs",

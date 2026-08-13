@@ -35,6 +35,12 @@ const (
 	creatorLinux   = 0
 
 	// Feature flags we set.
+	// featCompatExtAttr advertises extended attributes. Without it e2fsck holds
+	// that i_file_acl must be zero and reports every attribute block as a stray
+	// reference, so the flag is not decoration: it is what makes the blocks mean
+	// anything to anybody else.
+	featCompatExtAttr = 0x0008
+
 	featIncompatFiletype    = 0x0002
 	featIncompatExtents     = 0x0040
 	featRoCompatSparseSuper = 0x0001

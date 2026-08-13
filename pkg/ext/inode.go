@@ -23,6 +23,14 @@ type inode struct {
 	// verbatim over the i_block area when non-nil.
 	blockRaw []byte
 	extra    uint16 // i_extra_isize, for inodes larger than 128 bytes
+	fileACL  uint32 // i_file_acl: block holding extended attributes, or 0
+	// eaSectors is what the attribute block costs in i_blocks. It is kept apart
+	// because the data-block passes assign i_blocks outright, and an increment
+	// applied before them would be overwritten.
+	eaSectors uint32
+	// xattrIbody is the pre-encoded attribute area for the space left over
+	// inside a large inode; nil when there is nothing to store there.
+	xattrIbody []byte
 }
 
 func (n *inode) marshalInto(b []byte) {
@@ -45,8 +53,12 @@ func (n *inode) marshalInto(b []byte) {
 			le.PutUint32(b[40+i*4:], n.block[i])
 		}
 	}
+	le.PutUint32(b[104:], n.fileACL) // i_file_acl
 	if n.extra > 0 && len(b) >= 130 {
 		le.PutUint16(b[128:], n.extra) // i_extra_isize
+	}
+	if len(n.xattrIbody) > 0 {
+		copy(b[int(goodOldInodeSize)+int(n.extra):], n.xattrIbody)
 	}
 }
 
@@ -68,6 +80,15 @@ func parseInode(b []byte) inode {
 		n.block[i] = le.Uint32(b[40+i*4:])
 	}
 	n.blockRaw = append([]byte(nil), b[40:40+totalIBlocks*4]...)
+	n.fileACL = le.Uint32(b[104:])
+	if len(b) >= 130 {
+		n.extra = le.Uint16(b[128:])
+		// Keep the leftover area verbatim: it is where attributes live when they
+		// were small enough to avoid a block of their own.
+		if start := goodOldInodeSize + int(n.extra); start < len(b) {
+			n.xattrIbody = append([]byte(nil), b[start:]...)
+		}
+	}
 	return n
 }
 
