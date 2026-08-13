@@ -12,7 +12,9 @@ const (
 
 	defaultBlockSize = 131072 // 128 KiB data blocks
 
-	// Inode types (basic variants only; fsforge does not emit extended inodes).
+	// Inode types. The extended variants exist to carry an extended-attribute
+	// index; fsforge emits one only for a node that has attributes, so an image
+	// without them is byte-identical to what it was before.
 	typeDir     = 1
 	typeFile    = 2
 	typeSymlink = 3
@@ -20,6 +22,14 @@ const (
 	typeChrdev  = 5
 	typeFifo    = 6
 	typeSocket  = 7
+
+	typeExtDir     = 8
+	typeExtFile    = 9
+	typeExtSymlink = 10
+	typeExtBlkdev  = 11
+	typeExtChrdev  = 12
+	typeExtFifo    = 13
+	typeExtSocket  = 14
 
 	// Superblock flags.
 	flagNoFragments = 0x0010

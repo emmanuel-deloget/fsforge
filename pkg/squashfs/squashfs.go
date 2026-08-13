@@ -68,6 +68,11 @@ func (e *Squashfs) Format(dev device.Device, _ image.Params) (image.Image, error
 func (img *sqImage) Finalize() error {
 	w := newSwriter(img.dev, img.eng.comp, img.eng.blockSize, img.eng.deps.Clock)
 	root := img.RootNode()
+	// Attribute sets are numbered first: an inode stores the number, so it
+	// cannot be written before the numbering exists.
+	if err := w.collectXattrs(root, map[*image.Node]bool{}); err != nil {
+		return err
+	}
 	w.assignInos(root)
 	inodesCount := w.nextIno - 1
 
@@ -83,6 +88,7 @@ func (img *sqImage) Finalize() error {
 	dirTableStart := uint64(w.pos)
 	w.writeAt(w.dirs.out)
 	idTableStart, noIDs := w.writeIDTable()
+	xattrTableStart, xattrIDCount := w.writeXattrTables()
 	bytesUsed := uint64(w.pos)
 
 	if w.err != nil {
@@ -96,17 +102,18 @@ func (img *sqImage) Finalize() error {
 		fragments:        0,
 		compression:      img.eng.comp.ID(),
 		blockLog:         uint16(bits.TrailingZeros32(img.eng.blockSize)),
-		flags:            flagNoFragments | flagNoXattrs,
+		flags:            w.superFlags(),
 		noIDs:            noIDs,
 		rootInode:        inodeRef(rootRes.block, rootRes.offset),
 		bytesUsed:        bytesUsed,
 		idTableStart:     idTableStart,
-		xattrTableStart:  noTable,
+		xattrTableStart:  xattrTableStart,
 		inodeTableStart:  inodeTableStart,
 		dirTableStart:    dirTableStart,
 		fragTableStart:   noTable,
 		lookupTableStart: noTable,
 	}
+	_ = xattrIDCount
 	if _, err := img.dev.WriteAt(sb.marshal(), 0); err != nil {
 		return err
 	}
