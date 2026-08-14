@@ -1,0 +1,161 @@
+name: fsforge
+description: >-
+  Build a filesystem image — ext4, squashfs, EROFS, ISO, cpio and more — from a
+  directory or a container image. Pure Go, no root, no privileged container.
+author: Emmanuel Deloget
+
+branding:
+  icon: hard-drive
+  color: orange
+
+inputs:
+  command:
+    description: 'Which command to run: mkfs, convert, disk or spec.'
+    required: false
+    default: mkfs
+  type:
+    description: 'Filesystem type for mkfs: ext2, ext4, squashfs, erofs, iso, cpio, udf, cramfs, romfs, fat, exfat.'
+    required: false
+  source:
+    description: 'Directory to build the image from (mkfs, spec).'
+    required: false
+  output:
+    description: 'Path to write. An extension of .qcow2 wraps the result in a QCOW2 container.'
+    required: false
+  size:
+    description: 'Image size for fixed-size types, e.g. 256M. Required for ext and FAT.'
+    required: false
+  spec:
+    description: >-
+      mtree(5) file laid over the tree: ownership, modes and device nodes a
+      checkout cannot hold.
+    required: false
+  label:
+    description: 'Volume label.'
+    required: false
+  block-size:
+    description: 'Block size in bytes; the engine default when unset.'
+    required: false
+  from:
+    description: 'Source for convert, e.g. docker://alpine:3.20 or dir:./rootfs.'
+    required: false
+  to:
+    description: 'Sink for convert, e.g. ext4:rootfs.img.'
+    required: false
+  platform:
+    description: 'Platform to take from a multi-platform image, e.g. linux/arm64.'
+    required: false
+  reproducible:
+    description: >-
+      Deterministic output: fixed timestamps and UUID, honouring
+      SOURCE_DATE_EPOCH. On by default, because a build worth caching is a build
+      that comes out the same twice.
+    required: false
+    default: 'true'
+  args:
+    description: 'Extra arguments appended verbatim, for anything the inputs above do not cover.'
+    required: false
+  version:
+    description: 'fsforge version to install, as a Go module version. Defaults to the action ref.'
+    required: false
+
+outputs:
+  image:
+    description: 'Path of the image that was written.'
+    value: ${{ steps.run.outputs.image }}
+  digest:
+    description: >-
+      sha256 of the image, so a later step can attest or publish it without
+      rehashing.
+    value: ${{ steps.run.outputs.digest }}
+  size:
+    description: 'Size of the image in bytes.'
+    value: ${{ steps.run.outputs.size }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install fsforge
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
+      run: |
+        set -euo pipefail
+        version="${VERSION:-${ACTION_REF:-latest}}"
+        # A branch name is not a module version; fall back rather than fail.
+        case "$version" in
+          v*|latest) ;;
+          *) version=latest ;;
+        esac
+        echo "::group::go install fsforge@${version}"
+        go install "github.com/emmanuel-deloget/fsforge/cmd/fsforge@${version}"
+        echo "::endgroup::"
+        echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+    - name: Run fsforge
+      id: run
+      shell: bash
+      env:
+        COMMAND: ${{ inputs.command }}
+        TYPE: ${{ inputs.type }}
+        SOURCE: ${{ inputs.source }}
+        OUTPUT: ${{ inputs.output }}
+        SIZE: ${{ inputs.size }}
+        SPEC: ${{ inputs.spec }}
+        LABEL: ${{ inputs.label }}
+        BLOCK_SIZE: ${{ inputs.block-size }}
+        FROM: ${{ inputs.from }}
+        TO: ${{ inputs.to }}
+        PLATFORM: ${{ inputs.platform }}
+        REPRODUCIBLE: ${{ inputs.reproducible }}
+        EXTRA: ${{ inputs.args }}
+      run: |
+        set -euo pipefail
+
+        argv=("$COMMAND")
+        add() { [ -n "$2" ] && argv+=("$1" "$2") || true; }
+
+        case "$COMMAND" in
+          mkfs)
+            add -type "$TYPE"; add -source "$SOURCE"; add -output "$OUTPUT"
+            add -size "$SIZE"; add -spec "$SPEC"; add -label "$LABEL"
+            add -block-size "$BLOCK_SIZE"
+            written="$OUTPUT"
+            ;;
+          convert)
+            add -from "$FROM"; add -to "$TO"; add -size "$SIZE"
+            add -block-size "$BLOCK_SIZE"; add -platform "$PLATFORM"
+            # A sink is written as kind:path; the path is what lands on disk.
+            written="${TO#*:}"
+            ;;
+          disk)
+            add -output "$OUTPUT"; add -size "$SIZE"
+            written="$OUTPUT"
+            ;;
+          spec)
+            add -source "$SOURCE"; add -output "$OUTPUT"
+            written="$OUTPUT"
+            ;;
+          *)
+            echo "::error::unknown command '$COMMAND' (want mkfs, convert, disk or spec)"
+            exit 2
+            ;;
+        esac
+
+        [ "$REPRODUCIBLE" = "true" ] && argv+=(-reproducible) || true
+        # Unquoted on purpose: this is how a caller passes several arguments.
+        [ -n "$EXTRA" ] && argv+=($EXTRA) || true
+
+        echo "::group::fsforge ${argv[*]}"
+        fsforge "${argv[@]}"
+        echo "::endgroup::"
+
+        if [ -n "$written" ] && [ -f "$written" ]; then
+          {
+            echo "image=$written"
+            echo "digest=sha256:$(sha256sum "$written" | cut -d' ' -f1)"
+            echo "size=$(stat -c%s "$written")"
+          } >> "$GITHUB_OUTPUT"
+          echo "Wrote $written ($(stat -c%s "$written") bytes)" >> "$GITHUB_STEP_SUMMARY"
+        fi
