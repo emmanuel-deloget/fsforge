@@ -26,8 +26,20 @@ to 44 MiB while the tree is built, then stays flat as 3.4 GiB are
 written](doc/profile.svg)
 
 Contents flow through `tree.Source` and are streamed at finalize, so what fsforge
-holds is the metadata tree and nothing else — about a kilobyte per file. The
+holds is the metadata tree and nothing else — roughly a kilobyte per file. The
 plateau above does not move while the bytes written triple.
+
+Which is why the two figures below are both true and neither is the whole story:
+
+| Source | Held |
+|---|---:|
+| one 2 GiB file | 400 KiB |
+| 50 000 files, 3.4 GiB | 44 MiB |
+
+Memory tracks the *number* of files, not their volume. A single enormous file
+costs almost nothing; a kernel tree costs a kilobyte an entry whatever its size.
+`TestStreamingKeepsMemoryBounded` pins the first case and fails if streaming
+stops.
 
 Draw it on your own machine, corpus and all:
 
@@ -36,8 +48,7 @@ go run ./internal/profile -svg doc/profile.svg
 ```
 
 It generates the source tree the first time (a few minutes, kept for later
-runs), measures, and writes the chart. `TestStreamingKeepsMemoryBounded` makes
-the same claim as a test that fails if it stops being true.
+runs), measures, and writes the chart.
 
 Nothing in fsforge is parallel, and it does not need to be: the same build takes
 3.8 s on one core and 4.1 s on twelve, the difference being scheduling noise. A
@@ -45,8 +56,8 @@ one-core CI runner is not a handicap.
 
 ## Speed
 
-A 66 MiB tree of 2 000 files with a rootfs-like size distribution, on one core
-of an i7-8850H, `-benchtime 3x`:
+A 66 MiB tree of 2 000 files with a rootfs-like size distribution, on an
+i7-8850H, `-benchtime 3x`:
 
 | Engine   | Throughput | Image / input | Allocated |
 |----------|-----------:|--------------:|----------:|
@@ -59,10 +70,6 @@ of an i7-8850H, `-benchtime 3x`:
 squashfs is an order of magnitude slower because it is the only one compressing
 — that is also why its output is a fifth of the input. Reproduce with
 `go test -run '^$' -bench . -benchmem .`
-
-Memory does not scale with the image: writing a 2 GiB image peaks at **400 KiB**
-of heap, because contents are streamed through `tree.Source` rather than held.
-`TestStreamingKeepsMemoryBounded` fails if that stops being true.
 
 ## Supported formats
 
