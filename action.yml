@@ -80,8 +80,25 @@ runs:
       env:
         VERSION: ${{ inputs.version }}
         ACTION_REF: ${{ github.action_ref }}
+      env:
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
+
+        # When the action is this repository — a workflow using "uses: ./", or a
+        # fork testing a change — build from the checkout. Installing the
+        # published version instead would test whatever was last released rather
+        # than what is here, and the two differ precisely when it matters.
+        if [ -f "$ACTION_PATH/go.mod" ] &&
+           grep -q '^module github.com/emmanuel-deloget/fsforge$' "$ACTION_PATH/go.mod"; then
+          echo "::group::go build (from the action's own checkout)"
+          mkdir -p "$RUNNER_TEMP/fsforge-bin"
+          go build -C "$ACTION_PATH" -o "$RUNNER_TEMP/fsforge-bin/fsforge" ./cmd/fsforge
+          echo "::endgroup::"
+          echo "$RUNNER_TEMP/fsforge-bin" >> "$GITHUB_PATH"
+          exit 0
+        fi
+
         version="${VERSION:-${ACTION_REF:-latest}}"
         # A branch name is not a module version; fall back rather than fail.
         case "$version" in
