@@ -28,6 +28,8 @@ func run(args []string) int {
 		err = disk(args[1:])
 	case "oci-add-layer":
 		err = ociAddLayer(args[1:])
+	case "spec":
+		err = specCmd(args[1:])
 	case "-h", "--help", "help":
 		usage()
 		return 0
@@ -50,6 +52,7 @@ usage:
   fsforge convert -from <kind>:<path> -to <kind>:<path> [options]
   fsforge disk -output <file> -size <size> -part <role>:<fstype>:<source>:<size> ...
   fsforge oci-add-layer -image <oci-dir> -from <dir|kind:path> [-ref <tag>] [-diff]
+  fsforge spec -source <dir> [-output <file>]
 
 mkfs options:
   -type         filesystem type (ext2, ext4, squashfs)        [required]
@@ -58,6 +61,7 @@ mkfs options:
   -size         image size for ext (e.g. 64M, 512M, 1G)       [required for ext]
   -block-size   block size in bytes (engine default if unset)
   -label        volume label
+  -spec         mtree(5) file laid over the tree: ownership, modes, devices
   -reproducible deterministic output (fixed timestamps and UUID)
 
 convert: <kind> is dir, ext2, ext4, squashfs, exfat, iso, erofs, cpio, udf, cramfs, romfs or oci.
@@ -83,6 +87,17 @@ disk: a GPT disk with one or more engine-formatted partitions.
 
 Any output path ending in .qcow2/.qcow (for mkfs, convert sinks or disk) writes
 a sparse QCOW2 container; QCOW2 inputs are decoded transparently.
+
+spec: write an mtree(5) description of a directory, to edit and keep alongside
+it. A checkout cannot hold uid 0, a device node or a setuid bit; a spec can, and
+mkfs -spec lays it back over the tree at build time.
+  -source <dir>    directory to describe                        [required]
+  -output <file>   where to write it (default: stdout)
+
+  e.g. fsforge spec -source ./rootfs -output rootfs.mtree
+       $EDITOR rootfs.mtree
+       fsforge mkfs -type ext4 -source ./rootfs -spec rootfs.mtree \
+         -size 256M -output rootfs.img
 
 oci-add-layer: stack another layer onto an existing OCI image layout.
   -image <oci-dir> OCI layout directory                         [required]

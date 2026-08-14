@@ -15,6 +15,7 @@ func mkfs(args []string) error {
 	sizeStr := fsSet.String("size", "", "image size (fixed-size types), e.g. 64M")
 	blockSize := fsSet.Uint("block-size", 0, "block size in bytes")
 	label := fsSet.String("label", "", "volume label")
+	spec := fsSet.String("spec", "", "mtree(5) file describing ownership, modes and device nodes")
 	reproducible := fsSet.Bool("reproducible", false, "deterministic output")
 	if err := fsSet.Parse(args); err != nil {
 		return err
@@ -26,7 +27,8 @@ func mkfs(args []string) error {
 	b := fsforge.New(*typ).
 		Size(*sizeStr).
 		BlockSize(uint32(*blockSize)).
-		Label(*label)
+		Label(*label).
+		Spec(*spec)
 	if *reproducible {
 		b.Reproducible(fsforge.SourceDateEpoch())
 	}
