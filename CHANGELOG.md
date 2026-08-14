@@ -49,6 +49,7 @@ change once, at this upgrade.
   and ingestion of an image that tool built.
 - `SECURITY.md`, `CONTRIBUTING.md` and this file; `govulncheck`, a `gofmt` gate
   and a weekly scheduled run in CI.
+- `fsforge version`, reporting the module version, platform and toolchain.
 
 ### Fixed
 
@@ -94,6 +95,10 @@ agree with each other perfectly.
 
 ### Changed
 
+- **The minimum Go version is now 1.26**, up from 1.24. Go maintains the two
+  most recent releases; 1.24 is no longer one of them, and CI took its toolchain
+  from `go.mod`, so the declared minimum was also the version everything was
+  built and tested with.
 - **squashfs images now use extended inodes for nodes that carry attributes.**
   An image with no extended attributes is byte-identical to before.
 - **ext images set `EXT2_FEATURE_COMPAT_EXT_ATTR`** when they carry attributes,
