@@ -2,6 +2,7 @@ package oci
 
 import (
 	"archive/tar"
+	"bufio"
 	"compress/gzip"
 	"errors"
 	"io"
@@ -95,9 +96,14 @@ func (a *applier) applyLayer(l *Layout, desc Descriptor) error {
 	}
 	defer rc.Close()
 
-	var src io.Reader = rc
-	if strings.HasSuffix(desc.MediaType, "+gzip") {
-		gz, err := gzip.NewReader(rc)
+	// Whether a layer is compressed is decided by looking at it rather than by
+	// its media type. The OCI type ends in "+gzip" and Docker's own ends in
+	// ".tar.gzip", and a layout assembled by hand may carry neither; the two
+	// magic bytes are the same in every case.
+	br := bufio.NewReader(rc)
+	var src io.Reader = br
+	if head, err := br.Peek(2); err == nil && head[0] == 0x1f && head[1] == 0x8b {
+		gz, err := gzip.NewReader(br)
 		if err != nil {
 			return err
 		}

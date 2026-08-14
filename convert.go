@@ -13,6 +13,7 @@ import (
 	"github.com/emmanuel-deloget/fsforge/pkg/image"
 	"github.com/emmanuel-deloget/fsforge/pkg/iso"
 	"github.com/emmanuel-deloget/fsforge/pkg/oci"
+	"github.com/emmanuel-deloget/fsforge/pkg/ociremote"
 	"github.com/emmanuel-deloget/fsforge/pkg/romfs"
 	"github.com/emmanuel-deloget/fsforge/pkg/squashfs"
 	"github.com/emmanuel-deloget/fsforge/pkg/tree"
@@ -39,6 +40,10 @@ type Options struct {
 	// Ref is the image reference recorded for an oci sink (default
 	// "fsforge:latest").
 	Ref string
+	// Registry tunes a "docker" source: which platform to take out of a
+	// multi-platform image, credentials for a registry that wants them, and
+	// whether plain HTTP is allowed. It is ignored for every other kind.
+	Registry ociremote.Options
 }
 
 // Convert bridges any supported source to any supported sink through the shared
@@ -52,7 +57,7 @@ func Convert(from, to Location, opt Options) error {
 		opt.Ref = "fsforge:latest"
 	}
 
-	root, cfg, cleanup, err := loadTree(from.Kind, from.Path, opt.Deps)
+	root, cfg, cleanup, err := loadTreeOpt(from.Kind, from.Path, opt.Deps, opt.Registry)
 	if err != nil {
 		return fmt.Errorf("load %s:%s: %w", from.Kind, from.Path, err)
 	}
@@ -69,6 +74,11 @@ type rootNoder interface{ RootNode() *image.Node }
 // loadTree produces a tree root from a source location. The returned cleanup
 // must be called after the tree has been consumed (it closes backing handles).
 func loadTree(kind, path string, deps image.Deps) (*image.Node, *oci.Image, func(), error) {
+	return loadTreeOpt(kind, path, deps, ociremote.Options{})
+}
+
+// loadTreeOpt is loadTree with the registry settings a "docker" source needs.
+func loadTreeOpt(kind, path string, deps image.Deps, regOpt ociremote.Options) (*image.Node, *oci.Image, func(), error) {
 	noop := func() {}
 	switch kind {
 	case "dir":
@@ -80,6 +90,21 @@ func loadTree(kind, path string, deps image.Deps) (*image.Node, *oci.Image, func
 			return nil, nil, noop, err
 		}
 		return mem.RootNode(), nil, cleanup, nil
+
+	case "docker", "registry":
+		// The image is pulled into a scratch layout and then read like any
+		// other: nothing downstream needs to know it came from a network.
+		dir, err := os.MkdirTemp("", "fsforge-pull-*")
+		if err != nil {
+			return nil, nil, noop, err
+		}
+		cleanup := func() { os.RemoveAll(dir) }
+		if _, err := ociremote.Pull(path, dir, regOpt); err != nil {
+			cleanup()
+			return nil, nil, noop, err
+		}
+		root, cfg, ocleanup, err := loadTree("oci", dir, deps)
+		return root, cfg, func() { ocleanup(); cleanup() }, err
 
 	case "ext2", "ext4":
 		return openImage(path, ext.NewExt2(deps)) // Open recovers the variant

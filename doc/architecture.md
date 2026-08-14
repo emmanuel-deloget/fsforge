@@ -304,7 +304,23 @@ specification is another `..` pointing at its parent, and a parent whose link
 count does not say so is an image `fsck` rejects. `image.Dir` does that
 accounting; anything building a tree around it has to do it too.
 
-### 8.4 Differential testing
+### 8.4 Registries: the one package with a socket
+
+`pkg/ociremote` speaks the OCI distribution protocol over `net/http` and writes
+what it fetches into an ordinary OCI layout. Everything downstream — flatten,
+convert, the engines — then works on that layout unchanged and unaware, which is
+why the network lives in one leaf package rather than threaded through the
+conversion path.
+
+Two decisions are worth stating. Every blob is verified against the digest that
+named it, streaming, bounded by the size the manifest declared: a registry is a
+remote party, content addressing is the only thing that makes its answers
+checkable, and an unbounded copy would fill a disk before any check ran. And
+whether a layer is compressed is decided by looking at its first two bytes
+rather than at its media type — the OCI type ends in `+gzip`, Docker's own ends
+in `.tar.gzip`, and the bytes are the same either way.
+
+### 8.5 Differential testing
 
 `fsck` answers "is this image valid?". It does not answer "does this image hold
 what was put into it?", and the two come apart: a writer and a reader that share

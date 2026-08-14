@@ -64,14 +64,22 @@ mkfs options:
   -spec         mtree(5) file laid over the tree: ownership, modes, devices
   -reproducible deterministic output (fixed timestamps and UUID)
 
-convert: <kind> is dir, ext2, ext4, squashfs, exfat, iso, erofs, cpio, udf, cramfs, romfs or oci.
+convert: <kind> is dir, ext2, ext4, squashfs, exfat, iso, erofs, cpio, udf,
+cramfs, romfs, oci, or docker (a registry reference, pulled on the fly).
   -from <kind>:<path>   source  (dir, ext2, ext4, squashfs, exfat, iso, erofs, cpio, udf, cramfs, romfs, oci)
   -to   <kind>:<path>   sink    (dir, ext2, ext4, squashfs, exfat, iso, erofs, cpio, udf, cramfs, romfs, oci)
   -size, -block-size    as for mkfs (ext sinks need -size)
   -ref                  image ref for an oci sink (default fsforge:latest)
+  -platform             which image to take from a multi-platform reference,
+                        e.g. linux/arm64 (default: linux and this architecture)
+  -registry-insecure    allow plain HTTP to the registry
   -reproducible         deterministic output
 
-  e.g. fsforge convert -from oci:./alpine-oci -to ext4:rootfs.img -size 256M
+  Registry credentials, when needed, come from FSFORGE_REGISTRY_USER and
+  FSFORGE_REGISTRY_PASSWORD rather than the command line.
+
+  e.g. fsforge convert -from docker://alpine:3.20 -to ext4:rootfs.img -size 256M
+       fsforge convert -from oci:./alpine-oci -to ext4:rootfs.img -size 256M
        fsforge convert -from dir:./rootfs    -to oci:./image-oci -ref app:v1
 
 disk: a GPT disk with one or more engine-formatted partitions.

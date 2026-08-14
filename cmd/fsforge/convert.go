@@ -3,9 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 
 	fsforge "github.com/emmanuel-deloget/fsforge"
+	"github.com/emmanuel-deloget/fsforge/pkg/ociremote"
 )
 
 // convert wires any supported source to any supported sink through the shared
@@ -18,6 +20,8 @@ func convert(args []string) error {
 	blockSize := fsSet.Uint("block-size", 0, "block size in bytes")
 	ref := fsSet.String("ref", "fsforge:latest", "image ref for oci sink")
 	reproducible := fsSet.Bool("reproducible", false, "deterministic output")
+	platform := fsSet.String("platform", "", "platform to take from a multi-platform image, e.g. linux/arm64")
+	insecure := fsSet.Bool("registry-insecure", false, "allow plain HTTP to the registry")
 	if err := fsSet.Parse(args); err != nil {
 		return err
 	}
@@ -35,6 +39,14 @@ func convert(args []string) error {
 	}
 
 	opt := fsforge.Options{Size: *sizeStr, BlockSize: uint32(*blockSize), Ref: *ref}
+	opt.Registry = ociremote.Options{
+		Platform: *platform,
+		Insecure: *insecure,
+		// Credentials come from the environment rather than the command line,
+		// where they would land in shell history and process listings.
+		Username: os.Getenv("FSFORGE_REGISTRY_USER"),
+		Password: os.Getenv("FSFORGE_REGISTRY_PASSWORD"),
+	}
 	if *reproducible {
 		opt.Deps = fsforge.ReproducibleDeps(fsforge.SourceDateEpoch())
 	}
@@ -46,6 +58,11 @@ func convert(args []string) error {
 }
 
 func parseLoc(s string) (fsforge.Location, error) {
+	// A registry reference is written the way every other tool writes it, and
+	// its "docker://" is a scheme rather than a kind:path separator.
+	if rest, ok := strings.CutPrefix(s, "docker://"); ok {
+		return fsforge.Location{Kind: "docker", Path: rest}, nil
+	}
 	i := strings.IndexByte(s, ':')
 	if i < 0 {
 		return fsforge.Location{}, fmt.Errorf("expected <kind>:<path>, got %q", s)
