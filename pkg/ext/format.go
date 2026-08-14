@@ -360,7 +360,16 @@ func (l *layouter) buildSpecial(n *image.Node, ino uint32) error {
 // accumulate indirect-block counts for i_blocks.
 func (l *layouter) newInode(n *image.Node, size uint32) (*inode, error) {
 	l.curMeta = 0
-	t := uint32(n.ModTime.Unix())
+	// A zero ModTime means "resolve from the injected clock", which is what
+	// tree.Meta documents and what keeps a reproducible build reproducible. The
+	// editing API applies it; a tree assembled around that API — an mtree spec
+	// creating /dev/console, say — arrives here with the zero value, and
+	// converting that to a uint32 lands somewhere in 2042.
+	mt := n.ModTime
+	if mt.IsZero() {
+		mt = l.deps.Clock.Now()
+	}
+	t := uint32(mt.Unix())
 	in := &inode{
 		mode:       extMode(n.Mode),
 		uid:        uint16(n.UID),

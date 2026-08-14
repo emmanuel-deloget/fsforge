@@ -110,8 +110,14 @@ jobs:
           sudo apt-get install -y --no-install-recommends e2fsprogs >/dev/null
           e2fsck -fn rootfs.img
           # The spec's device node has to be in the image, not merely in the run.
-          debugfs -R "stat /dev/console" rootfs.img 2>/dev/null | grep -q "Device major/minor number: (5, 1)" \
-            || { echo "::error::/dev/console is missing or wrong"; exit 1; }
+          stat=$(debugfs -R "stat /dev/console" rootfs.img 2>/dev/null)
+          echo "$stat" | grep -q "Type: character special" \
+            || { echo "::error::/dev/console is not a character device"; echo "$stat"; exit 1; }
+          echo "$stat" | grep -q "Device major/minor number: 05:01" \
+            || { echo "::error::/dev/console has the wrong device numbers"; echo "$stat"; exit 1; }
+          # A zero ModTime must resolve from the clock, not land in 2042.
+          echo "$stat" | grep -q "mtime: 0x00000000" \
+            || { echo "::error::/dev/console has no sensible mtime"; echo "$stat"; exit 1; }
 
       - name: Build from a registry
         uses: ./

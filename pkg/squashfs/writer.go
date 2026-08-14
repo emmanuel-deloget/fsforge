@@ -106,7 +106,11 @@ func (w *swriter) header(typ uint16, n *image.Node) []byte {
 	le.PutUint16(b[2:], unixPerm(n.Mode))
 	le.PutUint16(b[4:], w.idOf(n.UID))
 	le.PutUint16(b[6:], w.idOf(n.GID))
-	le.PutUint32(b[8:], uint32(n.ModTime.Unix()))
+	mt := n.ModTime
+	if mt.IsZero() { // see tree.Meta: the zero value resolves from the clock
+		mt = w.clock.Now()
+	}
+	le.PutUint32(b[8:], uint32(mt.Unix()))
 	le.PutUint32(b[12:], n.Ino)
 	return b
 }

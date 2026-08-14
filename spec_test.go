@@ -203,3 +203,43 @@ func at(n *image.Node, p string) *image.Node {
 func splitPath(p string) []string {
 	return strings.FieldsFunc(p, func(r rune) bool { return r == '/' })
 }
+
+// TestSpecNodesGetASensibleTime pins a contract the engines have to honour:
+// tree.Meta documents a zero ModTime as "resolve from the injected clock", and
+// a specification creates nodes without one. ext and squashfs used to convert
+// the zero value straight to a uint32, which put /dev/console in 2042 — an
+// image e2fsck accepts and no reader would question.
+func TestSpecNodesGetASensibleTime(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "file"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	spec := filepath.Join(t.TempDir(), "s.mtree")
+	if err := os.WriteFile(spec, []byte(
+		"./dev type=dir mode=0755\n./dev/console type=char mode=0600 device=native,5,1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	const epoch = 1600000000
+	for _, fsType := range []string{"ext4", "squashfs"} {
+		t.Run(fsType, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "img")
+			size := ""
+			if fsType == "ext4" {
+				size = "16M"
+			}
+			if err := fsforge.New(fsType).Reproducible(epoch).Size(size).Spec(spec).
+				BuildFromDir(src, out); err != nil {
+				t.Fatalf("build: %v", err)
+			}
+			n := at(readBack(t, fsType, out), "dev/console")
+			if n == nil {
+				t.Fatal("dev/console missing")
+			}
+			if got := n.ModTime.Unix(); got != epoch {
+				t.Errorf("dev/console mtime = %d (%s), want the injected clock's %d",
+					got, n.ModTime.UTC(), int64(epoch))
+			}
+		})
+	}
+}
