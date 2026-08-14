@@ -19,6 +19,27 @@ has long lacked: producing real filesystem images in unprivileged CI, on any
 host OS — OS/appliance images, container and embedded rootfs, VM disks, and
 reproducible build artifacts.
 
+## Speed
+
+A 66 MiB tree of 2 000 files with a rootfs-like size distribution, on one core
+of an i7-8850H, `-benchtime 3x`:
+
+| Engine   | Throughput | Image / input | Allocated |
+|----------|-----------:|--------------:|----------:|
+| ISO 9660 |  588 MB/s  |         1.02× |    105 MB |
+| ext4     |  500 MB/s  |         1.99× |    109 MB |
+| cpio     |  491 MB/s  |         1.00× |    135 MB |
+| EROFS    |  467 MB/s  |         1.05× |     13 MB |
+| squashfs |   49 MB/s  |         0.18× |    360 MB |
+
+squashfs is an order of magnitude slower because it is the only one compressing
+— that is also why its output is a fifth of the input. Reproduce with
+`go test -run '^$' -bench . -benchmem .`
+
+Memory does not scale with the image: writing a 2 GiB image peaks at **400 KiB**
+of heap, because contents are streamed through `tree.Source` rather than held.
+`TestStreamingKeepsMemoryBounded` fails if that stops being true.
+
 ## Supported formats
 
 Every format is a **write target** (fsforge creates it; some it can also read
@@ -64,6 +85,22 @@ library, so its `go.mod` carries no `require` block and there is no `go.sum` —
 nothing transitive to vendor, audit or keep up to date. The external tools in
 the table above are used **only by the conformance tests**, never by the library
 or CLI at runtime.
+
+## In a GitHub workflow
+
+```yaml
+- uses: emmanuel-deloget/fsforge@v1
+  with:
+    type: ext4
+    source: ./rootfs
+    output: rootfs.img
+    size: 256M
+    spec: rootfs.mtree      # ownership and device nodes
+```
+
+No privileged container, no loop device, no `sudo`. The action outputs the
+image's path, size and `sha256`, so a later step can attest or publish it
+without rehashing.
 
 ## From a registry, in one step
 

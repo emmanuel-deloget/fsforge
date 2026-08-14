@@ -53,3 +53,78 @@ jobs:
 
       - name: conformance tests
         run: go test -tags conformance ./...
+
+  action:
+    name: action · build an image the way a user would
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # A tree with the shape a rootfs has, and a spec for what a checkout
+      # cannot carry: root ownership, a setuid bit, device nodes.
+      - name: Prepare a source tree
+        run: |
+          mkdir -p rootfs/etc rootfs/bin
+          echo forge > rootfs/etc/hostname
+          printf '#!/bin/sh\n' > rootfs/bin/ping
+          cat > rootfs.mtree <<'SPEC'
+          /set uid=0 gid=0
+          ./etc          type=dir  mode=0755
+          ./etc/hostname type=file mode=0644
+          ./bin          type=dir  mode=0755
+          ./bin/ping     type=file mode=4755
+          ./dev          type=dir  mode=0755
+          ./dev/console  type=char mode=0600 device=native,5,1
+          ./tmp          type=dir  mode=01777
+          SPEC
+
+      # The action under test is this checkout, which is what makes the job
+      # worth running: a change that breaks it fails here rather than in
+      # somebody's workflow.
+      - name: Build with the action
+        id: build
+        uses: ./
+        with:
+          type: ext4
+          source: ./rootfs
+          output: rootfs.img
+          size: 64M
+          spec: rootfs.mtree
+          label: root
+
+      - name: Check what came out
+        run: |
+          set -euo pipefail
+          test -f "${{ steps.build.outputs.image }}"
+          case "${{ steps.build.outputs.digest }}" in
+            sha256:*) ;;
+            *) echo "::error::no digest was reported"; exit 1 ;;
+          esac
+          # e2fsck is the arbiter; the action is only a wrapper if the image is
+          # sound.
+          sudo apt-get install -y --no-install-recommends e2fsprogs >/dev/null
+          e2fsck -fn rootfs.img
+          # The spec's device node has to be in the image, not merely in the run.
+          stat=$(debugfs -R "stat /dev/console" rootfs.img 2>/dev/null)
+          echo "$stat" | grep -q "Type: character special" \
+            || { echo "::error::/dev/console is not a character device"; echo "$stat"; exit 1; }
+          echo "$stat" | grep -q "Device major/minor number: 05:01" \
+            || { echo "::error::/dev/console has the wrong device numbers"; echo "$stat"; exit 1; }
+          # A zero ModTime must resolve from the clock, not land in 2042.
+          echo "$stat" | grep -q "mtime: 0x00000000" \
+            || { echo "::error::/dev/console has no sensible mtime"; echo "$stat"; exit 1; }
+
+      - name: Build from a registry
+        uses: ./
+        with:
+          command: convert
+          from: docker://alpine:3.20
+          to: squashfs:alpine.sqsh
+
+      - name: Check the registry build
+        run: test -s alpine.sqsh
