@@ -65,6 +65,25 @@ nothing transitive to vendor, audit or keep up to date. The external tools in
 the table above are used **only by the conformance tests**, never by the library
 or CLI at runtime.
 
+## From a registry, in one step
+
+```bash
+fsforge convert -from docker://alpine:3.20 -to ext4:rootfs.img -size 256M
+```
+
+The image is pulled straight from the registry — no `docker pull`, no daemon, no
+local layout to prepare — flattened, and written as a filesystem. Every blob is
+checked against the digest that named it before it is used.
+
+```go
+ref, err := ociremote.Pull("ghcr.io/owner/app:v1", "./app-oci", ociremote.Options{
+    Platform: "linux/arm64",
+})
+```
+
+`pkg/ociremote` is the only package that opens a socket; a build that never
+mentions a registry never touches the network.
+
 ## Ownership, modes and device nodes, without root
 
 A checkout is owned by whoever cloned it, holds no device nodes, and loses
