@@ -8,6 +8,11 @@
 *.img
 *.squashfs
 
+# Profiling output. The chart under doc/ is committed on purpose; the samples
+# it was drawn from are not — they are a few hundred kilobytes that change on
+# every run and say nothing a reader of the chart needs.
+/profile.json
+
 # Go workspace / coverage
 go.work
 go.work.sum
