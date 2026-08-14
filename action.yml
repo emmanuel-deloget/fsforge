@@ -80,7 +80,6 @@ runs:
       env:
         VERSION: ${{ inputs.version }}
         ACTION_REF: ${{ github.action_ref }}
-      env:
         ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
