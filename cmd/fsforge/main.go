@@ -5,7 +5,14 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
+	"runtime/debug"
 )
+
+// version is stamped at link time by the release workflow
+// (-X main.version=vX.Y.Z). A build from source says so instead, which is more
+// useful in a bug report than a number that was never set.
+var version = "(devel)"
 
 func main() { os.Exit(run(os.Args[1:])) }
 
@@ -30,6 +37,9 @@ func run(args []string) int {
 		err = ociAddLayer(args[1:])
 	case "spec":
 		err = specCmd(args[1:])
+	case "version", "-version", "--version":
+		fmt.Printf("fsforge %s %s/%s %s\n", buildVersion(), runtime.GOOS, runtime.GOARCH, runtime.Version())
+		return 0
 	case "-h", "--help", "help":
 		usage()
 		return 0
@@ -44,6 +54,16 @@ func run(args []string) int {
 	return 0
 }
 
+// buildVersion prefers the module version the go tool recorded, so
+// `go install …@v0.3.0` reports v0.3.0 without any linker flag; the stamped
+// value is the fallback for a binary built from a checkout.
+func buildVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return version
+}
+
 func usage() {
 	fmt.Fprint(os.Stderr, `fsforge — pure-Go filesystem image builder
 
@@ -53,6 +73,7 @@ usage:
   fsforge disk -output <file> -size <size> -part <role>:<fstype>:<source>:<size> ...
   fsforge oci-add-layer -image <oci-dir> -from <dir|kind:path> [-ref <tag>] [-diff]
   fsforge spec -source <dir> [-output <file>]
+  fsforge version
 
 mkfs options:
   -type         filesystem type (ext2, ext4, squashfs)        [required]

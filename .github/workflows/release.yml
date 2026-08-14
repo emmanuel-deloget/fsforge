@@ -1,0 +1,109 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write   # to create the release and upload to it
+  id-token: write   # to sign the provenance attestation
+  attestations: write
+
+jobs:
+  binaries:
+    name: build · attest · publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # A release that ships a binary nobody tested is worse than one that ships
+      # none, so the gate runs here too rather than being assumed from the PR.
+      - name: Test
+        run: |
+          go vet ./...
+          go test ./...
+          bash scripts/coverage_gate.sh
+
+      - name: Build
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          # Trimmed paths and no build id: two builders on different machines
+          # should produce the same bytes, which is the least a project selling
+          # reproducibility can do for its own artefacts.
+          flags="-trimpath"
+          ldflags="-s -w -X main.version=${VERSION}"
+
+          for target in \
+            linux/amd64 linux/arm64 linux/arm linux/riscv64 \
+            darwin/amd64 darwin/arm64 \
+            windows/amd64 windows/arm64 \
+            freebsd/amd64
+          do
+            os="${target%/*}"; arch="${target#*/}"
+            name="fsforge_${VERSION}_${os}_${arch}"
+            out="dist/${name}/fsforge"
+            [ "$os" = windows ] && out="${out}.exe"
+
+            mkdir -p "dist/${name}"
+            echo "building ${target}"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
+              go build $flags -ldflags "$ldflags" -o "$out" ./cmd/fsforge
+
+            cp README.md LICENSE CHANGELOG.md "dist/${name}/"
+            if [ "$os" = windows ]; then
+              (cd dist && zip -qr "${name}.zip" "${name}")
+            else
+              tar -C dist -czf "dist/${name}.tar.gz" "${name}"
+            fi
+            rm -rf "dist/${name}"
+          done
+
+          (cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS)
+          cat dist/SHA256SUMS
+
+      # Provenance: what built this, from which commit, with which workflow.
+      # A reproducible build is only worth as much as the claim about where it
+      # came from.
+      - name: Attest provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'dist/*.tar.gz, dist/*.zip'
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          notes=$(mktemp)
+          {
+            echo "## Install"
+            echo
+            echo '```bash'
+            echo "go install github.com/emmanuel-deloget/fsforge/cmd/fsforge@${VERSION}"
+            echo '```'
+            echo
+            echo "Or take a binary below. Verify it with:"
+            echo
+            echo '```bash'
+            echo "gh attestation verify fsforge_${VERSION}_linux_amd64.tar.gz -R ${{ github.repository }}"
+            echo "sha256sum -c SHA256SUMS --ignore-missing"
+            echo '```'
+            echo
+            echo "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${VERSION}/CHANGELOG.md) for what changed."
+          } > "$notes"
+
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --notes-file "$notes" \
+            --verify-tag \
+            dist/*.tar.gz dist/*.zip dist/SHA256SUMS

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -536,4 +537,48 @@ func TestSpecToStdout(t *testing.T) {
 	if !strings.HasPrefix(got, "#mtree") {
 		t.Errorf("stdout does not start with the mtree marker:\n%s", got)
 	}
+}
+
+// TestVersion covers the command a bug report starts with. The value is stamped
+// at link time or read from the module, so what is checked here is that it
+// prints something identifying rather than what that something is.
+func TestVersion(t *testing.T) {
+	for _, arg := range []string{"version", "-version", "--version"} {
+		var code int
+		out := captureStdout(t, func() { code = run([]string{arg}) })
+		if code != 0 {
+			t.Errorf("run(%q) = %d, want 0", arg, code)
+		}
+		if !strings.HasPrefix(out, "fsforge ") || !strings.Contains(out, runtime.GOARCH) {
+			t.Errorf("run(%q) printed %q", arg, out)
+		}
+	}
+}
+
+// captureStdout runs f with stdout redirected and returns what it wrote.
+func captureStdout(t *testing.T, f func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	done := make(chan string)
+	go func() {
+		var sb strings.Builder
+		buf := make([]byte, 4096)
+		for {
+			n, err := r.Read(buf)
+			sb.Write(buf[:n])
+			if err != nil {
+				break
+			}
+		}
+		done <- sb.String()
+	}()
+	f()
+	os.Stdout = old
+	w.Close()
+	return <-done
 }
