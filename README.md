@@ -19,6 +19,30 @@ has long lacked: producing real filesystem images in unprivileged CI, on any
 host OS — OS/appliance images, container and embedded rootfs, VM disks, and
 reproducible build artifacts.
 
+## Memory does not follow image size
+
+![Memory held and bytes written while building a 4 GiB ext4 image: memory rises
+to 44 MiB while the tree is built, then stays flat as 3.4 GiB are
+written](doc/profile.svg)
+
+Contents flow through `tree.Source` and are streamed at finalize, so what fsforge
+holds is the metadata tree and nothing else — about a kilobyte per file. The
+plateau above does not move while the bytes written triple.
+
+Draw it on your own machine, corpus and all:
+
+```bash
+go run ./internal/profile -svg doc/profile.svg
+```
+
+It generates the source tree the first time (a few minutes, kept for later
+runs), measures, and writes the chart. `TestStreamingKeepsMemoryBounded` makes
+the same claim as a test that fails if it stops being true.
+
+Nothing in fsforge is parallel, and it does not need to be: the same build takes
+3.8 s on one core and 4.1 s on twelve, the difference being scheduling noise. A
+one-core CI runner is not a handicap.
+
 ## Speed
 
 A 66 MiB tree of 2 000 files with a rootfs-like size distribution, on one core

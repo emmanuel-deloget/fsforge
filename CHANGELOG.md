@@ -10,6 +10,15 @@ out under **Changed** or **Fixed**, with what it means for images already built.
 
 ## [Unreleased]
 
+### Added
+
+- **`internal/profile`**, which measures what a build costs over time — memory
+  held and bytes written, on one clock — and draws the chart the README shows.
+  It generates its own corpus, so a reader who doubts the numbers runs one
+  command and gets their own. The memory curve reads `/gc/heap/live:bytes`
+  rather than `HeapAlloc`: the latter counts garbage not yet collected, and its
+  sawtooth says when the collector ran, not what the program holds.
+
 ## [0.3.0] — 2026-08-14
 
 ### Upgrading
