@@ -4,6 +4,11 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Weekly, so an advisory published without a commit still surfaces: nothing
+  # in the repository changes when a vulnerability in the toolchain is
+  # disclosed, and a build-triggered check would never notice.
+  schedule:
+    - cron: '17 6 * * 1' 
 
 permissions:
   contents: read
@@ -29,8 +34,36 @@ jobs:
       - name: go test
         run: go test ./... -covermode=atomic -coverprofile=cover.out
 
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l . | grep -v '^$' || true)
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
       - name: coverage gate
         run: bash scripts/coverage_gate.sh
+
+  vulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Deliberately the latest Go rather than the one in go.mod: govulncheck
+      # reports standard-library advisories against the toolchain it runs with,
+      # and those are fixed by the newest patch release.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
 
   conformance:
     name: conformance (e2fsck, unsquashfs, …)

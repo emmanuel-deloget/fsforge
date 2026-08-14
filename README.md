@@ -235,6 +235,15 @@ go test ./...                          # pure-Go, unprivileged
 go test -tags conformance ./pkg/ext/   # validates with e2fsck (host or container)
 ```
 
+## Contributing
+
+Bug reports and patches are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for
+the rules that are not negotiable (pure Go, no dependencies, write-or-nothing)
+and for what a good test looks like here. Security reports have their own route:
+[SECURITY.md](SECURITY.md).
+
+What changed and when is in [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 [MIT](LICENSE) © Emmanuel Deloget
